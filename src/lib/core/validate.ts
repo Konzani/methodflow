@@ -1,0 +1,10 @@
+import type{IR}from"./ir";
+export const hasCycle=(ir:IR)=>{const a=new Map<string,string[]>();ir.nodes.forEach(n=>a.set(n.id,[]));ir.edges.forEach(e=>a.get(e.source)?.push(e.target));const s=new Map<string,number>();const v=(u:string):boolean=>{s.set(u,1);for(const w of a.get(u)??[]){const c=s.get(w)??0;if(c===1||(c===0&&v(w)))return true}s.set(u,2);return false};return ir.nodes.some(n=>(s.get(n.id)??0)===0&&v(n.id))};
+export function sanitizeIR(ir:IR):IR{const seen=new Set<string>();const nodes=ir.nodes.filter(n=>!seen.has(n.id)&&!!seen.add(n.id));const gs=new Set(ir.groups.map(g=>g.id));const k=new Set<string>();const edges=ir.edges.filter(e=>{const key=e.source+">"+e.target;if(!seen.has(e.source)||!seen.has(e.target)||e.source===e.target||k.has(key))return false;k.add(key);return true}).map((e,i)=>({...e,id:"e"+(i+1)}));return{...ir,nodes:nodes.map(n=>n.groupId&&!gs.has(n.groupId)?{...n,groupId:undefined}:n),edges}}
+export function validateGraph(ir:IR,strict=false):string[]{const o:string[]=[];const ids=new Set(ir.nodes.map(n=>n.id));
+if(ids.size!==ir.nodes.length)o.push("Duplicate node ids.");
+ir.edges.forEach(e=>{if(!ids.has(e.source)||!ids.has(e.target))o.push("An edge points to a missing node.")});
+for(const n of ir.nodes.filter(n=>n.shape==="decision")){const out=ir.edges.filter(e=>e.source===n.id);if(out.length<2)o.push(`Decision "${n.label}" needs at least two branches.`);else if(out.some(e=>!e.label))o.push(`Decision "${n.label}" has an unlabelled branch.`)}
+if(ir.nodes.length>1){const c=new Set(ir.edges.flatMap(e=>[e.source,e.target]));ir.nodes.forEach(n=>{if(!c.has(n.id))o.push(`"${n.label}" is not connected.`)})}
+if(strict){if(hasCycle(ir))o.push("Diagram contains a cycle.");if(ir.nodes.length<4)o.push("Too few nodes.");if(!ir.nodes.some(n=>n.shape==="terminator")&&!["prisma","consort"].includes(ir.meta.methodology))o.push("Missing start/end terminators.")}
+return[...new Set(o)]}

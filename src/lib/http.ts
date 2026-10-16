@@ -1,0 +1,3 @@
+export const MSG:Record<string,string>={BAD_REQUEST:"The request was not valid.",TOO_LARGE:"The input is too large.",RATE_LIMITED:"Daily limit reached. Try again later or start from a template.",BUDGET:"AI generation is paused for now. Start from a template.",SHARE_UNAVAILABLE:"Sharing is not configured on this server.",SERVER:"Something went wrong. Your work is safe in this browser."};
+export const fail=(code:keyof typeof MSG|string,status:number)=>Response.json({error:code,message:MSG[code]??MSG.SERVER},{status,headers:{"Cache-Control":"no-store"}});
+export const ok=(b:unknown)=>Response.json(b,{headers:{"Cache-Control":"no-store"}});
