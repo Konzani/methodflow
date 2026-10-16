@@ -1,7 +1,7 @@
 # MethodFlow
 
 Methodology flowchart maker for theses and research papers. Next.js 15 (App Router), TypeScript, React Flow, Zod.
-Intended home: **https://flowchart.geodesia.online**
+Intended home: **https://methodflow.geodesia.online**
 
 ## Run locally
 ```bash
