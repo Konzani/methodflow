@@ -64,13 +64,11 @@ export function layout(ir: IR): IR {
   return runDagre(ir, "LR", d);
 }
 
-/**
- * Attempts to arrange the diagram to perfectly fill the page.
- * It stretches the nodesep and ranksep to match the page aspect ratio.
- */
 export function fitToPage(ir: IR, pageW: number, pageH: number, margin: number): IR {
   const d = ir.meta.density ?? "balanced";
-  const dir = pageW > pageH ? "LR" : "TB";
+  const isLandscape = pageW > pageH;
+  const dir = isLandscape ? "LR" : "TB";
+  const flowDir = isLandscape ? "lr" : "tb";
   
   // 1. Run initial layout to measure
   const tmp = runDagre(ir, dir, d);
@@ -91,7 +89,7 @@ export function fitToPage(ir: IR, pageW: number, pageH: number, margin: number):
   // 4. Re-run with the new optimal spacing
   return {
     ...runDagre(ir, dir, d, Math.max(newNs, 30), Math.max(newRs, 40)),
-    meta: { ...ir.meta, flowDirection: dir }
+    meta: { ...ir.meta, flowDirection: flowDir }
   };
 }
 
