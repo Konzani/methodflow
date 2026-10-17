@@ -1,7 +1,7 @@
 "use client";
 import{useEffect,useMemo,useRef,useState}from"react";
 import Link from"next/link";
-import{ReactFlow,Background,Controls,Handle,Position,MarkerType,ReactFlowProvider,useNodesState,useEdgesState,useReactFlow,type Node,type Edge,type NodeProps}from"@xyflow/react";
+import{ReactFlow,Background,Controls,Handle,Position,MarkerType,ReactFlowProvider,useNodesState,useEdgesState,useReactFlow,useStore,type Node,type Edge,type NodeProps}from"@xyflow/react";
 import"@xyflow/react/dist/style.css";
 import{IRSchema,METHODS,SHAPES,DENSITIES,type Method,type Shape,type Density,type PaletteId,type FlowDirection}from"@/lib/core/ir";
 import{placed,size}from"@/lib/core/layout";
@@ -58,6 +58,8 @@ const pw = isLand ? 297 : 210;
 const ph = isLand ? 210 : 297;
 const pageW = pw * 3.7795;
 const pageH = ph * 3.7795;
+
+const [tx, ty, zoom] = useStore((s) => s.transform);
 
 useEffect(()=>{setPage(loadPageSettings())},[]);
 useEffect(()=>{savePageSettings(page)},[page]);
@@ -130,12 +132,21 @@ onConnect={c=>c.source&&c.target&&s.connect(c.source,c.target)} onNodeClick={(_,
 onNodeDragStop={(_,n)=>s.move(n.id,Math.round(n.position.x),Math.round(n.position.y))}
 onNodesDelete={d=>s.remove(d.map(n=>n.id),[])} onEdgesDelete={d=>s.remove([],d.map(e=>e.id))}
 deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} maxZoom={2} fitView>
-<svg className="react-flow__background" style={{zIndex:-2,position:"absolute",inset:0,pointerEvents:"none"}}>
-  <rect x={0} y={0} width={pageW} height={pageH} fill="#fff" stroke="#d1d5db" strokeWidth={2} style={{filter:"drop-shadow(0px 4px 12px rgba(0,0,0,0.05))"}} />
-  <text x={pageW/2} y={-10} textAnchor="middle" fontSize={14} fill="#9ca3af" fontWeight="bold">
-    {page.size.toUpperCase()} {page.orientation.toUpperCase()} ({pw}×{ph}mm)
-  </text>
-</svg>
+<div style={{
+  position: "absolute",
+  top: 0, left: 0,
+  transform: `translate(${tx}px, ${ty}px) scale(${zoom})`,
+  transformOrigin: "0 0",
+  pointerEvents: "none",
+  zIndex: -1
+}}>
+  <svg width={pageW} height={pageH} style={{ overflow: "visible" }}>
+    <rect width="100%" height="100%" fill="#fff" stroke="#d1d5db" strokeWidth={2} style={{ filter: "drop-shadow(0px 4px 12px rgba(0,0,0,0.05))" }} />
+    <text x={pageW/2} y={-20} textAnchor="middle" fontSize={18} fill="#9ca3af" fontWeight="bold">
+      {page.size.toUpperCase()} {page.orientation.toUpperCase()} ({pw}×{ph}mm)
+    </text>
+  </svg>
+</div>
 <Background gap={24} size={1} color="#D9DEE3"/><Controls showInteractive={false}/></ReactFlow>
 </main>
 
