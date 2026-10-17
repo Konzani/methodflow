@@ -6,5 +6,5 @@ if(ids.size!==ir.nodes.length)o.push("Duplicate node ids.");
 ir.edges.forEach(e=>{if(!ids.has(e.source)||!ids.has(e.target))o.push("An edge points to a missing node.")});
 for(const n of ir.nodes.filter(n=>n.shape==="decision")){const out=ir.edges.filter(e=>e.source===n.id);if(out.length<2)o.push(`Decision "${n.label}" needs at least two branches.`);else if(out.some(e=>!e.label))o.push(`Decision "${n.label}" has an unlabelled branch.`)}
 if(ir.nodes.length>1){const c=new Set(ir.edges.flatMap(e=>[e.source,e.target]));ir.nodes.forEach(n=>{if(!c.has(n.id))o.push(`"${n.label}" is not connected.`)})}
-if(strict){if(hasCycle(ir))o.push("Diagram contains a cycle.");if(ir.nodes.length<4)o.push("Too few nodes.");if(!ir.nodes.some(n=>n.shape==="terminator")&&!["prisma","consort"].includes(ir.meta.methodology))o.push("Missing start/end terminators.")}
+if(strict){if(ir.nodes.length<4)o.push("Too few nodes.");if(!ir.nodes.some(n=>n.shape==="terminator")&&!["prisma","consort"].includes(ir.meta.methodology))o.push("Missing start/end terminators.")}
 return[...new Set(o)]}
