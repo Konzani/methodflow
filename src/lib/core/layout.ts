@@ -13,10 +13,16 @@ const SPACING: Record<Density, { ns: number; rs: number; pad: number }> = {
   spacious: { ns: 110, rs: 130, pad: 64 },
 };
 
-function runDagre(ir: IR, rankdir: "TB" | "LR", d: Density): IR {
+function runDagre(ir: IR, rankdir: "TB" | "LR", d: Density, customNs?: number, customRs?: number): IR {
   const g = new dagre.graphlib.Graph();
   const { ns, rs, pad } = SPACING[d];
-  g.setGraph({ rankdir, nodesep: ns, ranksep: rs, marginx: pad, marginy: pad });
+  g.setGraph({ 
+    rankdir, 
+    nodesep: customNs ?? ns, 
+    ranksep: customRs ?? rs, 
+    marginx: pad, 
+    marginy: pad 
+  });
   g.setDefaultEdgeLabel(() => ({}));
   ir.nodes.forEach((n) => {
     const z = size(n.shape);
@@ -44,17 +50,6 @@ function bounds(ir: IR) {
   return { w: mx, h: my };
 }
 
-/**
- * Layout with automatic flow direction.
- * - "tb": top-to-bottom
- * - "lr": left-to-right
- * - "auto": run both, prefer TB unless it becomes too tall (ratio > 3.5)
- *
- * A ratio above 3.5 means the diagram is more than 3.5× taller than wide,
- * which scales poorly onto a standard page in portrait and produces tiny
- * text. In that case we flip to left-to-right, which yields a wide, short
- * diagram suited to landscape orientation (or a scrollable wide view).
- */
 export function layout(ir: IR): IR {
   const d: Density = ir.meta.density ?? "balanced";
   const dir: FlowDirection = ir.meta.flowDirection ?? "auto";
@@ -67,6 +62,37 @@ export function layout(ir: IR): IR {
   const ratio = b.h / Math.max(b.w, 1);
   if (ratio <= 3.5) return tb;
   return runDagre(ir, "LR", d);
+}
+
+/**
+ * Attempts to arrange the diagram to perfectly fill the page.
+ * It stretches the nodesep and ranksep to match the page aspect ratio.
+ */
+export function fitToPage(ir: IR, pageW: number, pageH: number, margin: number): IR {
+  const d = ir.meta.density ?? "balanced";
+  const dir = pageW > pageH ? "LR" : "TB";
+  
+  // 1. Run initial layout to measure
+  const tmp = runDagre(ir, dir, d);
+  const b = bounds(tmp);
+  
+  // 2. Calculate available page space
+  const availW = pageW - (margin * 3.7795 * 2); 
+  const availH = pageH - (margin * 3.7795 * 2);
+
+  const scaleX = availW / b.w;
+  const scaleY = availH / b.h;
+  
+  // 3. Stretch spacing dynamically to fill the available space
+  const { ns, rs } = SPACING[d];
+  const newNs = ns * (dir === "LR" ? scaleY : scaleX);
+  const newRs = rs * (dir === "LR" ? scaleX : scaleY);
+
+  // 4. Re-run with the new optimal spacing
+  return {
+    ...runDagre(ir, dir, d, Math.max(newNs, 30), Math.max(newRs, 40)),
+    meta: { ...ir.meta, flowDirection: dir }
+  };
 }
 
 export const placed = (ir: IR) =>

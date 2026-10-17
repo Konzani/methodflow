@@ -1,7 +1,7 @@
 "use client";
 import{create}from"zustand";
 import{emptyIR,type E,type IR,type N,type Shape,type Density,type PaletteId,type FlowDirection}from"@/lib/core/ir";
-import{layout}from"@/lib/core/layout";
+import{layout,fitToPage}from"@/lib/core/layout";
 import{migrate}from"@/lib/core/migrate";
 export type Sel={k:"n"|"e"|"g";id:string}|null;
 interface S{ir:IR;past:IR[];future:IR[];sel:Sel;rev:number;tag:string;t:number;
@@ -10,7 +10,7 @@ patchNode:(id:string,p:Partial<N>)=>void;patchEdge:(id:string,p:Partial<E>)=>voi
 setPalette:(id:PaletteId)=>void;setDensity:(d:Density)=>void;setFlowDirection:(f:FlowDirection)=>void;
 setNodeColor:(id:string,p:{fill?:string;stroke?:string;text?:string})=>void;
 setGroupColor:(id:string,color:string|undefined)=>void;
-addNode:(s:Shape)=>void;remove:(n:string[],e:string[])=>void;connect:(a:string,b:string)=>void;move:(id:string,x:number,y:number)=>void;relayout:()=>void;
+addNode:(s:Shape)=>void;remove:(n:string[],e:string[])=>void;connect:(a:string,b:string)=>void;move:(id:string,x:number,y:number)=>void;relayout:()=>void;fitPage:(w:number,h:number,m:number)=>void;
 addGroup:(l:string)=>void;removeGroup:(id:string)=>void}
 const uid=(p:string)=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 export const useDiagram=create<S>((set,get)=>({ir:emptyIR(),past:[],future:[],sel:null,rev:0,tag:"",t:0,
@@ -25,6 +25,7 @@ patchTitle:t=>{const{ir,commit}=get();commit({...ir,meta:{...ir.meta,title:t.sli
 setPalette:id=>{const{ir,commit}=get();commit({...ir,meta:{...ir.meta,paletteId:id}},"palette")},
 setDensity:d=>{const{ir,commit}=get();const next={...ir,meta:{...ir.meta,density:d}};commit(layout(next));set(s=>({rev:s.rev+1}))},
 setFlowDirection:f=>{const{ir,commit}=get();const next={...ir,meta:{...ir.meta,flowDirection:f}};commit(layout(next));set(s=>({rev:s.rev+1}))},
+fitPage:(w,h,m)=>{const{ir,commit}=get();commit(fitToPage(ir,w,h,m));set(s=>({rev:s.rev+1}))},
 setNodeColor:(id,p)=>{const{ir,commit}=get();commit({...ir,nodes:ir.nodes.map(n=>n.id===id?{...n,...p}:n)},"c:"+id)},
 setGroupColor:(id,color)=>{const{ir,commit}=get();commit({...ir,groups:ir.groups.map(g=>g.id===id?{...g,color}:g)},"gc:"+id)},
 addNode:shape=>{const{ir,commit}=get();const id=uid("n");const my=ir.nodes.reduce((m,n)=>Math.max(m,(n.y??0)+70),0);const label=shape==="decision"?"Decision?":shape==="terminator"?"End":"New step";commit({...ir,nodes:[...ir.nodes,{id,label,shape,x:ir.nodes[0]?.x??0,y:my}]});set({sel:{k:"n",id}})},

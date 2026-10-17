@@ -1,7 +1,7 @@
 "use client";
 import{useEffect,useMemo,useRef,useState}from"react";
 import Link from"next/link";
-import{ReactFlow,Background,Controls,Handle,Position,MarkerType,ReactFlowProvider,useNodesState,useEdgesState,useReactFlow,useStore,type Node,type Edge,type NodeProps}from"@xyflow/react";
+import{ReactFlow,Background,Controls,Handle,Position,MarkerType,ReactFlowProvider,useNodesState,useEdgesState,useReactFlow,ViewportPortal,type Node,type Edge,type NodeProps}from"@xyflow/react";
 import"@xyflow/react/dist/style.css";
 import{IRSchema,METHODS,SHAPES,DENSITIES,type Method,type Shape,type Density,type PaletteId,type FlowDirection}from"@/lib/core/ir";
 import{placed,size}from"@/lib/core/layout";
@@ -59,7 +59,41 @@ const ph = isLand ? 210 : 297;
 const pageW = pw * 3.7795;
 const pageH = ph * 3.7795;
 
-const [tx, ty, zoom] = useStore((s) => s.transform);
+// Calculate live group boxes based on node positions
+const groupBoxes = useMemo(() => {
+  return ir.groups.map((g, i) => {
+    const members = nodes.filter(n => ir.nodes.find(gn => gn.id === n.id)?.groupId === g.id);
+    if (!members.length) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    members.forEach(m => {
+      const z = size(m.data.shape);
+      minX = Math.min(minX, m.position.x);
+      minY = Math.min(minY, m.position.y);
+      maxX = Math.max(maxX, m.position.x + z.w);
+      maxY = Math.max(maxY, m.position.y + z.h);
+    });
+    const pad = 32;
+    const x = minX - pad;
+    const y = minY - pad;
+    const w = maxX - minX + pad * 2;
+    const h = maxY - minY + pad * 2;
+    const tint = g.color ?? pal.groupTints[i % pal.groupTints.length];
+    return (
+      <div key={g.id} style={{
+        position: 'absolute',
+        transform: `translate(${x}px, ${y}px)`,
+        width: w, height: h,
+        backgroundColor: tint,
+        border: `1px solid ${pal.accent}22`,
+        borderRadius: 8, zIndex: -1, pointerEvents: 'none'
+      }}>
+        <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 600, color: pal.accent, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {g.label}
+        </div>
+      </div>
+    );
+  });
+}, [nodes, ir.groups, ir.nodes, pal]);
 
 useEffect(()=>{setPage(loadPageSettings())},[]);
 useEffect(()=>{savePageSettings(page)},[page]);
@@ -96,6 +130,7 @@ return(<div className="app">
 <button onClick={s.undo} disabled={!past.length} aria-label="Undo">Undo</button>
 <button onClick={s.redo} disabled={!future.length} aria-label="Redo">Redo</button>
 <button onClick={s.relayout}>Auto-layout</button>
+<button onClick={()=>s.fitPage(pageW,pageH,page.margin)} style={{marginLeft:4, color:"var(--accent)", borderColor:"var(--accent)"}}>Fit Page</button>
 <div className="menu"><button className="pri" aria-expanded={menu} onClick={()=>setMenu(!menu)}>Export</button>
 {menu&&<div className="pop" role="menu">
 <label className="f">Palette<select value={ir.meta.paletteId??"mono"} onChange={e=>s.setPalette(e.target.value as PaletteId)}>{PALETTE_LIST.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -132,21 +167,17 @@ onConnect={c=>c.source&&c.target&&s.connect(c.source,c.target)} onNodeClick={(_,
 onNodeDragStop={(_,n)=>s.move(n.id,Math.round(n.position.x),Math.round(n.position.y))}
 onNodesDelete={d=>s.remove(d.map(n=>n.id),[])} onEdgesDelete={d=>s.remove([],d.map(e=>e.id))}
 deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} maxZoom={2} fitView>
-<div style={{
-  position: "absolute",
-  top: 0, left: 0,
-  transform: `translate(${tx}px, ${ty}px) scale(${zoom})`,
-  transformOrigin: "0 0",
-  pointerEvents: "none",
-  zIndex: -1
-}}>
-  <svg width={pageW} height={pageH} style={{ overflow: "visible" }}>
-    <rect width="100%" height="100%" fill="#fff" stroke="#d1d5db" strokeWidth={2} style={{ filter: "drop-shadow(0px 4px 12px rgba(0,0,0,0.05))" }} />
-    <text x={pageW/2} y={-20} textAnchor="middle" fontSize={18} fill="#9ca3af" fontWeight="bold">
-      {page.size.toUpperCase()} {page.orientation.toUpperCase()} ({pw}×{ph}mm)
-    </text>
-  </svg>
-</div>
+<ViewportPortal>
+  <div style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: -2 }}>
+      <svg width={pageW} height={pageH} style={{ overflow: "visible" }}>
+        <rect width="100%" height="100%" fill="#fff" stroke="#d1d5db" strokeWidth={2} style={{ filter: "drop-shadow(0px 4px 12px rgba(0,0,0,0.05))" }} />
+        <text x={pageW/2} y={-20} textAnchor="middle" fontSize={18} fill="#9ca3af" fontWeight="bold">
+          {page.size.toUpperCase()} {page.orientation.toUpperCase()} ({pw}×{ph}mm)
+        </text>
+      </svg>
+  </div>
+  {groupBoxes}
+</ViewportPortal>
 <Background gap={24} size={1} color="#D9DEE3"/><Controls showInteractive={false}/></ReactFlow>
 </main>
 
