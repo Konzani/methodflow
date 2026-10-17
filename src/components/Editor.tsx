@@ -53,6 +53,12 @@ const booted=useRef(false);const irRef=useRef(ir);irRef.current=ir;
 const checks=useMemo(()=>validateGraph(ir),[ir]);
 const pal=getPalette(ir.meta.paletteId);
 
+const isLand = page.orientation === "landscape";
+const pw = isLand ? 297 : 210;
+const ph = isLand ? 210 : 297;
+const pageW = pw * 3.7795;
+const pageH = ph * 3.7795;
+
 useEffect(()=>{setPage(loadPageSettings())},[]);
 useEffect(()=>{savePageSettings(page)},[page]);
 useEffect(()=>{const t=new URLSearchParams(location.search).get("t");const tpl=t?getTemplate(t):undefined;const d=loadDraft();
@@ -124,6 +130,12 @@ onConnect={c=>c.source&&c.target&&s.connect(c.source,c.target)} onNodeClick={(_,
 onNodeDragStop={(_,n)=>s.move(n.id,Math.round(n.position.x),Math.round(n.position.y))}
 onNodesDelete={d=>s.remove(d.map(n=>n.id),[])} onEdgesDelete={d=>s.remove([],d.map(e=>e.id))}
 deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} maxZoom={2} fitView>
+<svg className="react-flow__background" style={{zIndex:-2,position:"absolute",inset:0,pointerEvents:"none"}}>
+  <rect x={0} y={0} width={pageW} height={pageH} fill="#fff" stroke="#d1d5db" strokeWidth={2} style={{filter:"drop-shadow(0px 4px 12px rgba(0,0,0,0.05))"}} />
+  <text x={pageW/2} y={-10} textAnchor="middle" fontSize={14} fill="#9ca3af" fontWeight="bold">
+    {page.size.toUpperCase()} {page.orientation.toUpperCase()} ({pw}×{ph}mm)
+  </text>
+</svg>
 <Background gap={24} size={1} color="#D9DEE3"/><Controls showInteractive={false}/></ReactFlow>
 </main>
 
