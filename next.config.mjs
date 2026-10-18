@@ -3,17 +3,16 @@ const isDev = process.env.NODE_ENV !== "production";
 const csp = [
   "default-src 'self'",
   // Dev needs 'unsafe-eval' and 'unsafe-inline' for HMR + React Refresh.
-  // Production uses strict sources only.
   isDev
     ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
     : "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  // Dev needs websockets for HMR; production is same-origin only.
+  // Dev needs websockets for HMR. Production allows Supabase connections.
   isDev
-    ? "connect-src 'self' ws: wss:"
-    : "connect-src 'self'",
+    ? "connect-src 'self' ws: wss: https://*.supabase.co"
+    : "connect-src 'self' https://*.supabase.co",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
