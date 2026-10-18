@@ -16,6 +16,8 @@ import{toTikz}from"@/lib/export/tikz";
 import{copy,download,slug,toDocx,toPdf,toPng}from"@/lib/export/client";
 import{useDiagram}from"@/stores/diagram";
 import{createClient}from"@/lib/supabase/client";
+import type { User } from "@supabase/supabase-js";
+import { useRouter } from "next/navigation";
 
 type D={label:string;shape:Shape;fill?:string;stroke?:string;text?:string};
 const ML:Record<Method,string>={quantitative:"Quantitative",qualitative:"Qualitative",mixed:"Mixed methods",prisma:"Systematic review (PRISMA)",consort:"Randomised trial (CONSORT)",dsr:"Design science",survey:"Survey",experimental:"Experimental",custom:"Other"};
@@ -44,6 +46,7 @@ return(<div className="scrim" onClick={onClose}><div className="modal" role="dia
 
 function Inner(){
 const s=useDiagram();const{ir,sel,rev,past,future}=s;const rf=useReactFlow();
+const router = useRouter();
 const[nodes,setNodes,onNodesChange]=useNodesState<Node<D>>([]);const[edges,setEdges,onEdgesChange]=useEdgesState<Edge>([]);
 const[status,setStatus]=useState("");const[msg,setMsg]=useState("");const[busy,setBusy]=useState(false);
 const[method,setMethod]=useState<Method>("quantitative");const[text,setText]=useState("");const[extra,setExtra]=useState("");
@@ -52,6 +55,8 @@ const[menu,setMenu]=useState(false);const[panel,setPanel]=useState<"l"|"r"|null>
 const[code,setCode]=useState<{title:string;text:string}|null>(null);const[grp,setGrp]=useState("");
 const[page,setPage]=useState<PageSettings>(DEFAULT_PAGE);
 const[cloudId,setCloudId]=useState<string|null>(null);
+const[user,setUser]=useState<User|null>(null);
+
 const booted=useRef(false);const irRef=useRef(ir);irRef.current=ir;
 const checks=useMemo(()=>validateGraph(ir),[ir]);
 const pal=getPalette(ir.meta.paletteId);
@@ -97,6 +102,15 @@ const groupBoxes = useMemo(() => {
   });
 }, [nodes, ir.groups, ir.nodes, pal]);
 
+useEffect(()=>{
+  const supabase = createClient();
+  supabase.auth.getUser().then(({data})=> setUser(data.user));
+  const {data: authListener} = supabase.auth.onAuthStateChange((_, session) => {
+    setUser(session?.user ?? null);
+  });
+  return () => authListener.subscription.unsubscribe();
+},[]);
+
 useEffect(()=>{setPage(loadPageSettings())},[]);
 useEffect(()=>{savePageSettings(page)},[page]);
 useEffect(()=>{
@@ -133,11 +147,17 @@ useEffect(()=>{if(!booted.current)return;const t=setTimeout(()=>setStatus(saveDr
 useEffect(()=>{const h=()=>{if(booted.current)saveDraft(irRef.current)};const v=()=>{if(document.visibilityState==="hidden")h()};window.addEventListener("pagehide",h);document.addEventListener("visibilitychange",v);return()=>{window.removeEventListener("pagehide",h);document.removeEventListener("visibilitychange",v)}},[]);
 useEffect(()=>{const k=(e:KeyboardEvent)=>{if(/INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName))return;const m=e.metaKey||e.ctrlKey,c=e.key.toLowerCase(),g=useDiagram.getState();if(m&&c==="z"){e.preventDefault();e.shiftKey?g.redo():g.undo()}else if(m&&c==="y"){e.preventDefault();g.redo()}};window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k)},[]);
 
+async function handleSignOut() {
+  const supabase = createClient();
+  await supabase.auth.signOut();
+  router.push("/");
+  router.refresh();
+}
+
 async function saveCloud() {
   setBusy(true); setMsg("Saving to cloud...");
   try {
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       setMsg("Please sign in to save to the cloud.");
       setBusy(false);
@@ -207,6 +227,18 @@ return(<div className="app">
 <button onClick={s.redo} disabled={!future.length} aria-label="Redo">Redo</button>
 <button onClick={s.relayout}>Auto-layout</button>
 <button onClick={()=>s.fitPage(pageW,pageH,page.margin)} style={{marginLeft:4, color:"var(--accent)", borderColor:"var(--accent)"}}>Fit Page</button>
+
+{user ? (
+  <div className="row" style={{ alignItems: "center", gap: 8, marginLeft: 8 }}>
+    <span style={{ fontSize: 13, color: "var(--slate)", whiteSpace: "nowrap", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" }} title={user.email}>
+      {user.email}
+    </span>
+    <button onClick={handleSignOut} style={{ fontSize: 13, padding: "5px 10px" }}>Sign out</button>
+  </div>
+) : (
+  <Link href="/login" className="btn ghost" style={{ padding: "5px 10px", fontSize: 14, marginLeft: 8, textDecoration: "none" }}>Sign in</Link>
+)}
+
 <div className="menu"><button className="pri" aria-expanded={menu} onClick={()=>setMenu(!menu)}>Export</button>
 {menu&&<div className="pop" role="menu">
 <label className="f">Palette<select value={ir.meta.paletteId??"mono"} onChange={e=>s.setPalette(e.target.value as PaletteId)}>{PALETTE_LIST.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
