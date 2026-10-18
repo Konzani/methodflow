@@ -15,6 +15,7 @@ import{toMermaid}from"@/lib/export/mermaid";
 import{toTikz}from"@/lib/export/tikz";
 import{copy,download,slug,toDocx,toPdf,toPng}from"@/lib/export/client";
 import{useDiagram}from"@/stores/diagram";
+import{createClient}from"@/lib/supabase/client";
 
 type D={label:string;shape:Shape;fill?:string;stroke?:string;text?:string};
 const ML:Record<Method,string>={quantitative:"Quantitative",qualitative:"Qualitative",mixed:"Mixed methods",prisma:"Systematic review (PRISMA)",consort:"Randomised trial (CONSORT)",dsr:"Design science",survey:"Survey",experimental:"Experimental",custom:"Other"};
@@ -50,6 +51,7 @@ const[refineText,setRefineText]=useState("");
 const[menu,setMenu]=useState(false);const[panel,setPanel]=useState<"l"|"r"|null>(null);
 const[code,setCode]=useState<{title:string;text:string}|null>(null);const[grp,setGrp]=useState("");
 const[page,setPage]=useState<PageSettings>(DEFAULT_PAGE);
+const[cloudId,setCloudId]=useState<string|null>(null);
 const booted=useRef(false);const irRef=useRef(ir);irRef.current=ir;
 const checks=useMemo(()=>validateGraph(ir),[ir]);
 const pal=getPalette(ir.meta.paletteId);
@@ -97,14 +99,68 @@ const groupBoxes = useMemo(() => {
 
 useEffect(()=>{setPage(loadPageSettings())},[]);
 useEffect(()=>{savePageSettings(page)},[page]);
-useEffect(()=>{const t=new URLSearchParams(location.search).get("t");const tpl=t?getTemplate(t):undefined;const d=loadDraft();
-let start=d??TEMPLATES[0].ir;if(tpl&&(!d||confirm("Replace your saved draft with this template?")))start=tpl.ir;useDiagram.getState().load(placed(start));booted.current=true},[]);
+useEffect(()=>{
+  const params = new URLSearchParams(location.search);
+  const id = params.get("id");
+  const t = params.get("t");
+  
+  const init = async () => {
+    if (id) {
+      const supabase = createClient();
+      const { data, error } = await supabase.from("diagrams").select("ir").eq("id", id).single();
+      if (!error && data?.ir) {
+        setCloudId(id);
+        useDiagram.getState().load(placed(data.ir));
+        booted.current = true;
+        return;
+      }
+    }
+    
+    const tpl = t ? getTemplate(t) : undefined;
+    const d = loadDraft();
+    let start = d ?? TEMPLATES[0].ir;
+    if (tpl && (!d || confirm("Replace your saved draft with this template?"))) start = tpl.ir;
+    useDiagram.getState().load(placed(start));
+    booted.current = true;
+  };
+  
+  init();
+},[]);
 useEffect(()=>{setNodes(ir.nodes.map(n=>({id:n.id,type:"mf",position:{x:n.x??0,y:n.y??0},data:{label:n.label,shape:n.shape,fill:n.fill,stroke:n.stroke,text:n.text},selected:sel?.k==="n"&&sel.id===n.id})))},[ir,sel,setNodes]);
 useEffect(()=>{setEdges(ir.edges.map(e=>({id:e.id,source:e.source,target:e.target,label:e.label,type:"smoothstep",selected:sel?.k==="e"&&sel.id===e.id,style:{stroke:pal.ink,strokeWidth:1.4,strokeDasharray:e.dashed?"6 4":undefined},markerEnd:{type:MarkerType.ArrowClosed,color:pal.ink},labelStyle:{fontSize:11,fill:pal.ink},labelBgStyle:{fill:"#fff"}})))},[ir,sel,setEdges,pal.ink]);
 useEffect(()=>{const t=setTimeout(()=>rf.fitView({padding:.2,duration:200}),60);return()=>clearTimeout(t)},[rev,rf]);
 useEffect(()=>{if(!booted.current)return;const t=setTimeout(()=>setStatus(saveDraft(ir)?"Saved in this browser":"Not saved: browser storage is blocked or full. Export JSON."),800);return()=>clearTimeout(t)},[ir]);
 useEffect(()=>{const h=()=>{if(booted.current)saveDraft(irRef.current)};const v=()=>{if(document.visibilityState==="hidden")h()};window.addEventListener("pagehide",h);document.addEventListener("visibilitychange",v);return()=>{window.removeEventListener("pagehide",h);document.removeEventListener("visibilitychange",v)}},[]);
 useEffect(()=>{const k=(e:KeyboardEvent)=>{if(/INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName))return;const m=e.metaKey||e.ctrlKey,c=e.key.toLowerCase(),g=useDiagram.getState();if(m&&c==="z"){e.preventDefault();e.shiftKey?g.redo():g.undo()}else if(m&&c==="y"){e.preventDefault();g.redo()}};window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k)},[]);
+
+async function saveCloud() {
+  setBusy(true); setMsg("Saving to cloud...");
+  try {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setMsg("Please sign in to save to the cloud.");
+      setBusy(false);
+      return;
+    }
+    const d = useDiagram.getState().ir;
+    if (cloudId) {
+      const { error } = await supabase.from("diagrams").update({ ir: d, title: d.meta.title, updated_at: new Date().toISOString() }).eq("id", cloudId);
+      if (error) throw error;
+      setMsg("Saved to cloud.");
+    } else {
+      const { data, error } = await supabase.from("diagrams").insert({ user_id: user.id, ir: d, title: d.meta.title }).select("id").single();
+      if (error) throw error;
+      setCloudId(data.id);
+      window.history.replaceState(null, '', `?id=${data.id}`);
+      setMsg("Saved to cloud.");
+    }
+  } catch (e: any) {
+    setMsg(e.message || "Failed to save to cloud.");
+  } finally {
+    setBusy(false);
+  }
+}
 
 async function gen(){setBusy(true);setMsg("");try{const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({methodology:method,text,extra})});const j=await r.json();if(!r.ok){setMsg(j.message||"Generation failed.");return}const p=IRSchema.safeParse(j.ir);if(!p.success){setMsg("The result was not valid. Your diagram is unchanged.");return}const g=useDiagram.getState();g.commit(placed(p.data));useDiagram.setState(x=>({rev:x.rev+1}));setMsg((j.warnings as string[]|undefined)?.join(" ")||"Draft ready. Check every step against your own method.");setPanel(null)}catch{setMsg("Network error. Your diagram is unchanged.")}finally{setBusy(false)}}
 
@@ -146,6 +202,7 @@ return(<div className="app">
 <span className="status" role="status">{status}</span><span className="sp"/>
 <button className="m-only" onClick={()=>setPanel(panel==="l"?null:"l")}>Create</button>
 <button className="m-only" onClick={()=>setPanel(panel==="r"?null:"r")}>Edit</button>
+<button onClick={saveCloud} disabled={busy} style={{ color: "var(--accent)", borderColor: "var(--accent)" }}>Save to Cloud</button>
 <button onClick={s.undo} disabled={!past.length} aria-label="Undo">Undo</button>
 <button onClick={s.redo} disabled={!future.length} aria-label="Redo">Redo</button>
 <button onClick={s.relayout}>Auto-layout</button>
