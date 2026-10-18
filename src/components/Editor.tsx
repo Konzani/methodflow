@@ -46,6 +46,7 @@ const s=useDiagram();const{ir,sel,rev,past,future}=s;const rf=useReactFlow();
 const[nodes,setNodes,onNodesChange]=useNodesState<Node<D>>([]);const[edges,setEdges,onEdgesChange]=useEdgesState<Edge>([]);
 const[status,setStatus]=useState("");const[msg,setMsg]=useState("");const[busy,setBusy]=useState(false);
 const[method,setMethod]=useState<Method>("quantitative");const[text,setText]=useState("");const[extra,setExtra]=useState("");
+const[refineText,setRefineText]=useState("");
 const[menu,setMenu]=useState(false);const[panel,setPanel]=useState<"l"|"r"|null>(null);
 const[code,setCode]=useState<{title:string;text:string}|null>(null);const[grp,setGrp]=useState("");
 const[page,setPage]=useState<PageSettings>(DEFAULT_PAGE);
@@ -59,7 +60,6 @@ const ph = isLand ? 210 : 297;
 const pageW = pw * 3.7795;
 const pageH = ph * 3.7795;
 
-// Calculate live group boxes based on node positions
 const groupBoxes = useMemo(() => {
   return ir.groups.map((g, i) => {
     const members = nodes.filter(n => ir.nodes.find(gn => gn.id === n.id)?.groupId === g.id);
@@ -107,6 +107,25 @@ useEffect(()=>{const h=()=>{if(booted.current)saveDraft(irRef.current)};const v=
 useEffect(()=>{const k=(e:KeyboardEvent)=>{if(/INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName))return;const m=e.metaKey||e.ctrlKey,c=e.key.toLowerCase(),g=useDiagram.getState();if(m&&c==="z"){e.preventDefault();e.shiftKey?g.redo():g.undo()}else if(m&&c==="y"){e.preventDefault();g.redo()}};window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k)},[]);
 
 async function gen(){setBusy(true);setMsg("");try{const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({methodology:method,text,extra})});const j=await r.json();if(!r.ok){setMsg(j.message||"Generation failed.");return}const p=IRSchema.safeParse(j.ir);if(!p.success){setMsg("The result was not valid. Your diagram is unchanged.");return}const g=useDiagram.getState();g.commit(placed(p.data));useDiagram.setState(x=>({rev:x.rev+1}));setMsg((j.warnings as string[]|undefined)?.join(" ")||"Draft ready. Check every step against your own method.");setPanel(null)}catch{setMsg("Network error. Your diagram is unchanged.")}finally{setBusy(false)}}
+
+async function doRefine(){
+  if(!refineText.trim())return;
+  setBusy(true);setMsg("");
+  try{
+    const r=await fetch("/api/refine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ir:useDiagram.getState().ir,instruction:refineText})});
+    const j=await r.json();
+    if(!r.ok){setMsg(j.message||"Refine failed.");return}
+    const p=IRSchema.safeParse(j.ir);
+    if(!p.success){setMsg("The result was not valid. Your diagram is unchanged.");return}
+    const g=useDiagram.getState();
+    g.commit(placed(p.data));
+    useDiagram.setState(x=>({rev:x.rev+1}));
+    setMsg("Refined successfully.");
+    setRefineText("");
+    setPanel(null);
+  }catch{setMsg("Network error. Your diagram is unchanged.")}finally{setBusy(false)}
+}
+
 async function exp(k:string){setMenu(false);const d=useDiagram.getState().ir;const n=slug(d.meta.title);setMsg("");try{
 if(k==="svg")download(new Blob([toSVG(d,page.theme,page.font).svg],{type:"image/svg+xml"}),n+".svg");
 else if(k==="png")download((await toPng(d,page)).blob,n+".png");
@@ -152,7 +171,16 @@ return(<div className="app">
 <label className="f">Key details<input value={extra} maxLength={300} onChange={e=>setExtra(e.target.value)} placeholder="Sample, instruments, analysis"/></label>
 <label className="f">Methodology text<textarea value={text} maxLength={8000} rows={6} onChange={e=>setText(e.target.value)} placeholder="Paste your methodology paragraph. Leave empty to use the standard stages."/></label>
 <button className="pri wide" onClick={gen} disabled={busy}>{busy?"Generating…":"Generate flowchart"}</button>
-{msg&&<p className="note" role="status">{msg}</p>}
+
+<h2 style={{marginTop:16}}>Refine with AI</h2>
+<label className="f">Instruction
+  <input value={refineText} maxLength={500} onChange={e=>setRefineText(e.target.value)} placeholder="e.g., Add a decision gate for missing data"/>
+</label>
+<button className="wide" onClick={doRefine} disabled={busy || !refineText.trim()}>
+  {busy ? "Refining…" : "Apply Edit"}
+</button>
+
+{msg&&<p className="note" role="status" style={{marginTop:8}}>{msg}</p>}
 <h2>Templates</h2>
 <ul className="list">{TEMPLATES.map(t=><li key={t.slug}><button onClick={()=>{useDiagram.getState().commit(t.ir);useDiagram.setState(x=>({rev:x.rev+1}));setPanel(null)}}>{t.title.replace(/ flowchart| flow diagram| template/gi,"")}</button></li>)}</ul>
 <h2>Add shape</h2>
