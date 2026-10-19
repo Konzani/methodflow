@@ -194,10 +194,17 @@ async function upload(file?: File) {
   try {
     const formData = new FormData();
     formData.append("file", file);
-    // We do NOT append the methodology here so the AI analyzes the text directly.
 
     const r = await fetch("/api/upload", { method: "POST", body: formData });
-    const j = await r.json();
+    
+    const rawText = await r.text();
+    let j: any;
+    try {
+      j = JSON.parse(rawText);
+    } catch {
+      if (!r.ok) throw new Error(`Server Error: ${r.status} ${r.statusText}`);
+      throw new Error("Invalid response from server");
+    }
 
     if (!r.ok) {
       setMsg(j.message || "Upload failed.");
@@ -215,8 +222,8 @@ async function upload(file?: File) {
     useDiagram.setState(x => ({ rev: x.rev + 1 }));
     setMsg("Draft ready from uploaded document.");
     setPanel(null);
-  } catch {
-    setMsg("Network error during upload.");
+  } catch (err: any) {
+    setMsg(err.message || "Network error during upload.");
   } finally {
     setBusy(false);
     setUploadedFile(null);

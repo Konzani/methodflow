@@ -23,24 +23,30 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File;
 
     if (!file) return fail("BAD_REQUEST", 400);
-    if (file.size > 5 * 1024 * 1024) return fail("TOO_LARGE", 413);
+    // Lowered to 4MB to stay safely under Vercel's 4.5MB hard limit
+    if (file.size > 4 * 1024 * 1024) return fail("TOO_LARGE", 413);
 
     let text = "";
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-      const data = await pdf(buffer);
-      text = data.text;
-    } else if (
-      file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      file.name.endsWith(".docx")
-    ) {
-      const result = await mammoth.extractRawText({ buffer });
-      text = result.value;
-    } else if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-      text = buffer.toString("utf-8");
-    } else {
-      return fail("BAD_REQUEST", 400);
+    try {
+      if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+        const data = await pdf(buffer);
+        text = data.text;
+      } else if (
+        file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        file.name.endsWith(".docx")
+      ) {
+        const result = await mammoth.extractRawText({ buffer });
+        text = result.value;
+      } else if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+        text = buffer.toString("utf-8");
+      } else {
+        return fail("BAD_REQUEST", 400);
+      }
+    } catch (parseError) {
+      console.error("File parsing failed:", parseError);
+      return fail("SERVER", 500); // Return 500 if pdf-parse crashes
     }
 
     text = text
@@ -57,8 +63,6 @@ export async function POST(req: NextRequest) {
     }
     if (text.length < 50) return fail("BAD_REQUEST", 400);
 
-    // CRITICAL FIX: Always use "custom" so the AI analyzes the document's actual text
-    // instead of forcing it into the dropdown's methodology.
     const g = await generate({
       method: "custom",
       text,
@@ -70,7 +74,7 @@ export async function POST(req: NextRequest) {
     return ok({ ir: g.ir, warnings: g.warnings });
 
   } catch (e) {
-    console.error("Upload error:", e);
+    console.error("Upload route fatal error:", e);
     return fail("SERVER", 500);
   }
 }
