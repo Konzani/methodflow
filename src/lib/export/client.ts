@@ -87,14 +87,18 @@ export async function toPdf(ir: IR, page: PageSettings) {
     format: [dims.w, dims.h],
   });
   const x = (dims.w - fit.mmW) / 2;
-  const y = (dims.h - fit.mmH) / 2 - 4;
+  const y = (dims.h - fit.mmH) / 2 - 4; 
   doc.addImage(await dataUrl(png), "PNG", x, y, fit.mmW, fit.mmH);
-  const caption = "Figure 1. " + (ir.meta.caption || ir.meta.title);
-  doc.setFontSize(10);
-  doc.text(caption, dims.w / 2, dims.h - page.margin + 2, {
-    align: "center",
-    maxWidth: dims.w - 2 * page.margin,
-  });
+  
+  // Removed "Figure 1." - uses only the title/caption the user provided
+  const caption = ir.meta.caption || ir.meta.title;
+  if (caption) {
+    doc.setFontSize(10);
+    doc.text(caption, dims.w / 2, dims.h - page.margin + 2, {
+      align: "center",
+      maxWidth: dims.w - 2 * page.margin,
+    });
+  }
   return doc.output("blob");
 }
 
@@ -103,12 +107,44 @@ export async function toDocx(ir: IR, page: PageSettings) {
   const fit = computeFit(w, h, page);
   const png = await svgToPngBlob(svg, fit.pxW, fit.pxH);
   const {
-    Document, Packer, Paragraph, TextRun, ImageRun, SimpleField,
+    Document, Packer, Paragraph, TextRun, ImageRun,
     AlignmentType, convertMillimetersToTwip,
   } = await import("docx");
 
   const dims = pageSizeMM(page);
   const data = new Uint8Array(await png.arrayBuffer());
+
+  // Calculate exact pixel width/height for Word using the page dimensions (A4 at 96 DPI)
+  // This ensures the image fits perfectly inside the margins, just like the PDF.
+  const contentWidthPx = (dims.w - 2 * page.margin) * 3.7795; 
+  const contentHeightPx = (dims.h - 2 * page.margin) * 3.7795;
+  const scale = Math.min(contentWidthPx / w, contentHeightPx / h, 1.5);
+  const finalW = Math.round(w * scale);
+  const finalH = Math.round(h * scale);
+
+  const caption = ir.meta.caption || ir.meta.title;
+  const children: any[] = [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [
+        new ImageRun({
+          type: "png",
+          data,
+          transformation: { width: finalW, height: finalH },
+          altText: { name: "figure", title: ir.meta.title, description: ir.meta.title },
+        }),
+      ],
+    }),
+  ];
+
+  if (caption) {
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: caption, italics: true, size: 20 })],
+      })
+    );
+  }
 
   const doc = new Document({
     creator: "MethodFlow",
@@ -130,27 +166,7 @@ export async function toDocx(ir: IR, page: PageSettings) {
             },
           },
         },
-        children: [
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            children: [
-              new ImageRun({
-                type: "png",
-                data,
-                transformation: { width: fit.pxW, height: fit.pxH },
-                altText: { name: "figure", title: ir.meta.title, description: ir.meta.title },
-              }),
-            ],
-          }),
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            children: [
-              new TextRun("Figure "),
-              new SimpleField("SEQ Figure \\* ARABIC", "1"),
-              new TextRun(". " + (ir.meta.caption || ir.meta.title)),
-            ],
-          }),
-        ],
+        children,
       },
     ],
   });
