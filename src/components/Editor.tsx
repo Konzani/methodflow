@@ -264,9 +264,9 @@ return(<div className="app">
 
 {user ? (
   <div className="row" style={{ alignItems: "center", gap: 8, marginLeft: 8 }}>
-    <span style={{ fontSize: 13, color: "var(--slate)", whiteSpace: "nowrap", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" }} title={user.email}>
-      {user.email}
-    </span>
+    <Link href="/dashboard" className="btn ghost" style={{ padding: "5px 10px", fontSize: 13, textDecoration: "none" }} title={user.email}>
+      My Dashboard
+    </Link>
     <button onClick={handleSignOut} style={{ fontSize: 13, padding: "5px 10px" }}>Sign out</button>
   </div>
 ) : (
