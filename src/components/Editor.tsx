@@ -51,6 +51,7 @@ const[nodes,setNodes,onNodesChange]=useNodesState<Node<D>>([]);const[edges,setEd
 const[status,setStatus]=useState("");const[msg,setMsg]=useState("");const[busy,setBusy]=useState(false);
 const[method,setMethod]=useState<Method>("quantitative");const[text,setText]=useState("");const[extra,setExtra]=useState("");
 const[refineText,setRefineText]=useState("");
+const[uploadedFile,setUploadedFile]=useState<string|null>(null);
 const[menu,setMenu]=useState(false);const[panel,setPanel]=useState<"l"|"r"|null>(null);
 const[code,setCode]=useState<{title:string;text:string}|null>(null);const[grp,setGrp]=useState("");
 const[page,setPage]=useState<PageSettings>(DEFAULT_PAGE);
@@ -186,11 +187,14 @@ async function gen(){setBusy(true);setMsg("");try{const r=await fetch("/api/gene
 
 async function upload(file?: File) {
   if (!file) return;
-  setBusy(true); setMsg("Extracting text and generating...");
+  setUploadedFile(file.name);
+  setBusy(true); 
+  setMsg(`Extracting text from ${file.name}...`);
+  
   try {
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("methodology", method);
+    // We do NOT append the methodology here so the AI analyzes the text directly.
 
     const r = await fetch("/api/upload", { method: "POST", body: formData });
     const j = await r.json();
@@ -215,6 +219,7 @@ async function upload(file?: File) {
     setMsg("Network error during upload.");
   } finally {
     setBusy(false);
+    setUploadedFile(null);
   }
 }
 
@@ -296,16 +301,26 @@ return(<div className="app">
 <button className="pri wide" onClick={gen} disabled={busy}>{busy?"Generating…":"Generate flowchart"}</button>
 
 <div style={{ marginTop: 12, marginBottom: 24 }}>
-  <label className="file" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, background: "var(--wash)", borderColor: "var(--accent)" }}>
-    <span style={{ fontWeight: 600, color: "var(--accent)" }}>📄 Upload PDF or DOCX</span>
+  <label className="file" style={{ 
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 8, 
+    padding: 12, background: busy ? "var(--wash)" : "var(--wash)", 
+    borderColor: busy ? "var(--slate)" : "var(--accent)",
+    cursor: busy ? "wait" : "pointer"
+  }}>
+    <span style={{ fontWeight: 600, color: busy ? "var(--slate)" : "var(--accent)" }}>
+      {busy && uploadedFile ? `Processing ${uploadedFile}...` : "📄 Upload PDF or DOCX"}
+    </span>
     <input 
       type="file" 
       accept=".pdf,.docx,.txt" 
       onChange={e => { upload(e.target.files?.[0]); e.target.value = ""; }} 
       disabled={busy}
+      style={{ display: "none" }}
     />
   </label>
-  <p className="note" style={{ textAlign: "center", marginTop: 8 }}>Auto-extracts methodology from your draft.</p>
+  <p className="note" style={{ textAlign: "center", marginTop: 8 }}>
+    {uploadedFile ? `Reading document: ${uploadedFile}` : "Auto-extracts methodology from your draft."}
+  </p>
 </div>
 
 <h2 style={{marginTop:16}}>Refine with AI</h2>

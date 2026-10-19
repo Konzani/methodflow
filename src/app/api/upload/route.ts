@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { z } from "zod";
 import { IRSchema, METHODS } from "@/lib/core/ir";
 import { generate } from "@/lib/llm";
 import { budgetOk, ipOf, limit, spend } from "@/lib/ratelimit";
@@ -8,15 +7,10 @@ import { fail, ok } from "@/lib/http";
 export const runtime = "nodejs";
 export const maxDuration = 45;
 
-// Use require to bypass ESM default export issues with pdf-parse in Next.js
 // @ts-ignore
 const pdf = require("pdf-parse");
 // @ts-ignore
 const mammoth = require("mammoth");
-
-const B = z.object({
-  methodology: z.string().optional(),
-});
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,7 +21,6 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData();
     const file = formData.get("file") as File;
-    const method = formData.get("methodology") as string || "custom";
 
     if (!file) return fail("BAD_REQUEST", 400);
     if (file.size > 5 * 1024 * 1024) return fail("TOO_LARGE", 413);
@@ -50,14 +43,24 @@ export async function POST(req: NextRequest) {
       return fail("BAD_REQUEST", 400);
     }
 
-    text = text.replace(/\s+/g, " ").trim();
+    text = text
+      .replace(/\r\n/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/\.{4,}\s*\d+/g, "")
+      .replace(/^\s*\d+\s*$/gm, "")
+      .replace(/\f/g, "")
+      .trim();
+
     if (text.length > 25000) {
       text = text.slice(0, 25000) + "\n[Text truncated due to length...]";
     }
     if (text.length < 50) return fail("BAD_REQUEST", 400);
 
+    // CRITICAL FIX: Always use "custom" so the AI analyzes the document's actual text
+    // instead of forcing it into the dropdown's methodology.
     const g = await generate({
-      method: (METHODS.includes(method as any) ? method : "custom") as any,
+      method: "custom",
       text,
       extra: "Generated from uploaded document.",
       warnings: [],
