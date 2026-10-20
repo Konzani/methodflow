@@ -7,8 +7,9 @@ import { fail, ok } from "@/lib/http";
 export const runtime = "nodejs";
 export const maxDuration = 45;
 
+// CRITICAL FIX: Bypass the index.js file which tries to load a test file and crashes on Vercel
 // @ts-ignore
-const pdf = require("pdf-parse");
+const pdf = require("pdf-parse/lib/pdf-parse.js");
 // @ts-ignore
 const mammoth = require("mammoth");
 
@@ -23,8 +24,7 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File;
 
     if (!file) return fail("BAD_REQUEST", 400);
-    // Lowered to 4MB to stay safely under Vercel's 4.5MB hard limit
-    if (file.size > 4 * 1024 * 1024) return fail("TOO_LARGE", 413);
+    if (file.size > 4 * 1024 * 1024) return fail("TOO_LARGE", 413); // 4MB limit
 
     let text = "";
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -46,9 +46,10 @@ export async function POST(req: NextRequest) {
       }
     } catch (parseError) {
       console.error("File parsing failed:", parseError);
-      return fail("SERVER", 500); // Return 500 if pdf-parse crashes
+      return fail("SERVER", 500); 
     }
 
+    // Clean the text
     text = text
       .replace(/\r\n/g, "\n")
       .replace(/[ \t]+/g, " ")
@@ -61,7 +62,11 @@ export async function POST(req: NextRequest) {
     if (text.length > 25000) {
       text = text.slice(0, 25000) + "\n[Text truncated due to length...]";
     }
-    if (text.length < 50) return fail("BAD_REQUEST", 400);
+    
+    // CRITICAL FIX: Ensure we have enough text (500 chars) to prevent garbage template generation
+    if (text.length < 500) {
+      return fail("BAD_REQUEST", 400); 
+    }
 
     const g = await generate({
       method: "custom",
