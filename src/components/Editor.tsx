@@ -307,15 +307,15 @@ return(<div className="app">
 <label className="f">Methodology text<textarea value={text} maxLength={8000} rows={6} onChange={e=>setText(e.target.value)} placeholder="Paste your methodology paragraph. Leave empty to use the standard stages."/></label>
 <button className="pri wide" onClick={gen} disabled={busy}>{busy?"Generating…":"Generate flowchart"}</button>
 
-<div style={{ marginTop: 12, marginBottom: 24 }}>
-  <label className="file" style={{ 
-    display: "flex", alignItems: "center", justifyContent: "center", gap: 8, 
-    padding: 12, background: busy ? "var(--wash)" : "var(--wash)", 
-    borderColor: busy ? "var(--slate)" : "var(--accent)",
-    cursor: busy ? "wait" : "pointer"
+<div style={{ marginTop: 8, marginBottom: 24, textAlign: "center" }}>
+  <label style={{ 
+    display: "inline-flex", alignItems: "center", justifyContent: "center", 
+    padding: "6px 12px", border: "1px solid var(--line)", borderRadius: "var(--r)", 
+    cursor: busy ? "wait" : "pointer", fontSize: 13, color: "var(--graphite)",
+    background: "transparent", transition: "all 0.2s"
   }}>
-    <span style={{ fontWeight: 600, color: busy ? "var(--slate)" : "var(--accent)" }}>
-      {busy && uploadedFile ? `Processing ${uploadedFile}...` : "📄 Upload PDF or DOCX"}
+    <span style={{ fontWeight: 500 }}>
+      {busy && uploadedFile ? `Processing ${uploadedFile}...` : "Or upload a PDF / DOCX"}
     </span>
     <input 
       type="file" 
@@ -325,9 +325,6 @@ return(<div className="app">
       style={{ display: "none" }}
     />
   </label>
-  <p className="note" style={{ textAlign: "center", marginTop: 8 }}>
-    {uploadedFile ? `Reading document: ${uploadedFile}` : "Auto-extracts methodology from your draft."}
-  </p>
 </div>
 
 <h2 style={{marginTop:16}}>Refine with AI</h2>
