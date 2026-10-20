@@ -3,15 +3,12 @@ import { IRSchema, METHODS } from "@/lib/core/ir";
 import { generate } from "@/lib/llm";
 import { budgetOk, ipOf, limit, spend } from "@/lib/ratelimit";
 import { fail, ok } from "@/lib/http";
+import { extractText, getDocumentProxy } from "unpdf";
+// @ts-ignore
+import mammoth from "mammoth";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
-
-// CRITICAL FIX: Bypass the index.js file which tries to load a test file and crashes on Vercel
-// @ts-ignore
-const pdf = require("pdf-parse/lib/pdf-parse.js");
-// @ts-ignore
-const mammoth = require("mammoth");
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,23 +21,24 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File;
 
     if (!file) return fail("BAD_REQUEST", 400);
-    if (file.size > 4 * 1024 * 1024) return fail("TOO_LARGE", 413); // 4MB limit
+    if (file.size > 4 * 1024 * 1024) return fail("TOO_LARGE", 413); // 4MB limit for Vercel
 
     let text = "";
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const buffer = new Uint8Array(await file.arrayBuffer());
 
     try {
       if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-        const data = await pdf(buffer);
-        text = data.text;
+        const pdf = await getDocumentProxy(buffer);
+        const result = await extractText(pdf, { mergePages: true });
+        text = result.text;
       } else if (
         file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
         file.name.endsWith(".docx")
       ) {
-        const result = await mammoth.extractRawText({ buffer });
+        const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) });
         text = result.value;
       } else if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-        text = buffer.toString("utf-8");
+        text = Buffer.from(buffer).toString("utf-8");
       } else {
         return fail("BAD_REQUEST", 400);
       }
@@ -63,7 +61,7 @@ export async function POST(req: NextRequest) {
       text = text.slice(0, 25000) + "\n[Text truncated due to length...]";
     }
     
-    // CRITICAL FIX: Ensure we have enough text (500 chars) to prevent garbage template generation
+    // Ensure we have enough text to generate a flowchart
     if (text.length < 500) {
       return fail("BAD_REQUEST", 400); 
     }
