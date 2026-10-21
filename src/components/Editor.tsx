@@ -15,6 +15,8 @@ import{toMermaid}from"@/lib/export/mermaid";
 import{toTikz}from"@/lib/export/tikz";
 import{copy,download,slug,toDocx,toPdf,toPng}from"@/lib/export/client";
 import{useDiagram}from"@/stores/diagram";
+import{useUpgradeStore}from"@/stores/upgrade";
+import{UpgradeModal}from"@/components/UpgradeModal";
 import{createClient}from"@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
@@ -47,6 +49,7 @@ return(<div className="scrim" onClick={onClose}><div className="modal" role="dia
 function Inner(){
 const s=useDiagram();const{ir,sel,rev,past,future}=s;const rf=useReactFlow();
 const router = useRouter();
+const openUpgrade = useUpgradeStore(state => state.open);
 const[nodes,setNodes,onNodesChange]=useNodesState<Node<D>>([]);const[edges,setEdges,onEdgesChange]=useEdgesState<Edge>([]);
 const[status,setStatus]=useState("");const[msg,setMsg]=useState("");const[busy,setBusy]=useState(false);
 const[method,setMethod]=useState<Method>("quantitative");const[text,setText]=useState("");const[extra,setExtra]=useState("");
@@ -175,41 +178,28 @@ async function handleSignOut() {
 }
 
 async function saveCloud() {
-  // 1. Check if user is logged in
   if (!user) {
     setMsg("Please sign in to save to the cloud.");
     window.location.href = "/login";
     return;
   }
 
-  // 2. Check if user is on Free tier
   if (plan === "free") {
-    setMsg("Upgrade to Pro to save your diagrams to the cloud.");
-    window.location.href = "/pricing";
+    openUpgrade("feature");
     return;
   }
 
-  // 3. Pro users (and trial users) proceed to save
   setBusy(true); setMsg("Saving to cloud...");
   try {
     const supabase = createClient();
     const d = useDiagram.getState().ir;
     
     if (cloudId) {
-      // Update existing diagram
-      const { error } = await supabase
-        .from("diagrams")
-        .update({ ir: d, title: d.meta.title, updated_at: new Date().toISOString() })
-        .eq("id", cloudId);
+      const { error } = await supabase.from("diagrams").update({ ir: d, title: d.meta.title, updated_at: new Date().toISOString() }).eq("id", cloudId);
       if (error) throw error;
       setMsg("Saved to cloud.");
     } else {
-      // Create new diagram
-      const { data, error } = await supabase
-        .from("diagrams")
-        .insert({ user_id: user.id, ir: d, title: d.meta.title })
-        .select("id")
-        .single();
+      const { data, error } = await supabase.from("diagrams").insert({ user_id: user.id, ir: d, title: d.meta.title }).select("id").single();
       if (error) throw error;
       
       setCloudId(data.id);
@@ -223,13 +213,32 @@ async function saveCloud() {
   }
 }
 
-async function gen(){setBusy(true);setMsg("");try{const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({methodology:method,text,extra})});const j=await r.json();if(!r.ok){setMsg(j.message||"Generation failed.");return}const p=IRSchema.safeParse(j.ir);if(!p.success){setMsg("The result was not valid. Your diagram is unchanged.");return}const g=useDiagram.getState();g.commit(placed(p.data));useDiagram.setState(x=>({rev:x.rev+1}));setMsg((j.warnings as string[]|undefined)?.join(" ")||"Draft ready. Check every step against your own method.");setPanel(null)}catch{setMsg("Network error. Your diagram is unchanged.")}finally{setBusy(false)}}
+async function gen(){
+  setBusy(true);setMsg("");
+  try{
+    const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({methodology:method,text,extra})});
+    const j=await r.json();
+    
+    if(r.status === 429){
+      setMsg("");
+      openUpgrade("limit");
+      return;
+    }
+    
+    if(!r.ok){setMsg(j.message||"Generation failed.");return}
+    const p=IRSchema.safeParse(j.ir);
+    if(!p.success){setMsg("The result was not valid. Your diagram is unchanged.");return}
+    const g=useDiagram.getState();g.commit(placed(p.data));
+    useDiagram.setState(x=>({rev:x.rev+1}));
+    setMsg((j.warnings as string[]|undefined)?.join(" ")||"Draft ready. Check every step against your own method.");
+    setPanel(null)
+  }catch{setMsg("Network error. Your diagram is unchanged.")}finally{setBusy(false)}
+}
 
 async function upload(file?: File) {
   if (!file) return;
   if (plan === "free") {
-    setMsg("Upgrade to Pro to upload and extract methodology from PDFs.");
-    window.location.href = "/pricing";
+    openUpgrade("feature");
     return;
   }
   setUploadedFile(file.name);
@@ -281,6 +290,13 @@ async function doRefine(){
   try{
     const r=await fetch("/api/refine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ir:useDiagram.getState().ir,instruction:refineText})});
     const j=await r.json();
+    
+    if(r.status === 429){
+      setMsg("");
+      openUpgrade("limit");
+      return;
+    }
+    
     if(!r.ok){setMsg(j.message||"Refine failed.");return}
     const p=IRSchema.safeParse(j.ir);
     if(!p.success){setMsg("The result was not valid. Your diagram is unchanged.");return}
@@ -295,18 +311,35 @@ async function doRefine(){
 
 async function exp(k:string){
   if ((k === "docx" || k === "tikz") && plan === "free") {
-    setMsg("Upgrade to Pro to export to Word or LaTeX.");
-    window.location.href = "/pricing";
+    setMenu(false);
+    openUpgrade("feature");
     return;
   }
-  setMenu(false);const d=useDiagram.getState().ir;const n=slug(d.meta.title);setMsg("");try{
-  if(k==="svg")download(new Blob([toSVG(d,page.theme,page.font,undefined,plan==="free").svg],{type:"image/svg+xml"}),n+".svg");
-  else if(k==="png")download((await toPng(d,page,plan==="free")).blob,n+".png");
-  else if(k==="pdf")download(await toPdf(d,page,plan==="free"),n+".pdf");
-  else if(k==="docx")download(await toDocx(d,page,plan==="free"),n+".docx");
-  else if(k==="json")download(new Blob([JSON.stringify(d,null,2)],{type:"application/json"}),n+".methodflow.json");
-  else if(k==="mermaid")setCode({title:"Mermaid",text:toMermaid(d)});
-  else if(k==="tikz")setCode({title:"LaTeX (TikZ)",text:toTikz(d)})}catch{setMsg("Export failed. Try PNG or SVG.")}}
+  
+  setMenu(false);
+  const d=useDiagram.getState().ir;
+  const n=slug(d.meta.title);
+  setMsg("");
+  
+  try{
+    if(k==="svg"){
+      download(new Blob([toSVG(d,page.theme,page.font,undefined,plan==="free").svg],{type:"image/svg+xml"}),n+".svg");
+      if(plan==="free") setTimeout(()=>openUpgrade("watermark"), 800);
+    }
+    else if(k==="png"){
+      download((await toPng(d,page,plan==="free")).blob,n+".png");
+      if(plan==="free") setTimeout(()=>openUpgrade("watermark"), 800);
+    }
+    else if(k==="pdf"){
+      download(await toPdf(d,page,plan==="free"),n+".pdf");
+      if(plan==="free") setTimeout(()=>openUpgrade("watermark"), 800);
+    }
+    else if(k==="docx") download(await toDocx(d,page,plan==="free"),n+".docx");
+    else if(k==="json") download(new Blob([JSON.stringify(d,null,2)],{type:"application/json"}),n+".methodflow.json");
+    else if(k==="mermaid") setCode({title:"Mermaid",text:toMermaid(d)});
+    else if(k==="tikz") setCode({title:"LaTeX (TikZ)",text:toTikz(d)})
+  }catch{setMsg("Export failed. Try PNG or SVG.")}
+}
 async function share(){setMenu(false);setMsg("");try{const r=await fetch("/api/share",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ir:useDiagram.getState().ir})});const j=await r.json();if(!r.ok){setMsg(j.message||"Could not create a link.");return}setCode({title:"Read-only link (kept 90 days)",text:location.origin+"/s/"+j.slug})}catch{setMsg("Network error. No link was created.")}}
 async function imp(f?:File){if(!f)return;if(f.size>2e5){setMsg("File is too large.");return}const ir2=parseIR(await f.text());if(!ir2){setMsg("That file is not a MethodFlow JSON diagram.");return}useDiagram.getState().commit(placed(ir2));useDiagram.setState(x=>({rev:x.rev+1}))}
 
@@ -443,6 +476,7 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
 <p className="note">Click a step or connector to edit it. Drag from a handle to connect. Delete removes the selection.</p></>}
 </aside>
 {code&&<Modal title={code.title} text={code.text} onClose={()=>setCode(null)}/>}
+<UpgradeModal />
 </div>)}
 
 export default function Editor(){return<ReactFlowProvider><Inner/></ReactFlowProvider>}
