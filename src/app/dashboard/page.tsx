@@ -8,40 +8,54 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ upgraded?: string }> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login");
-  }
+  if (!user) redirect("/login");
 
   const { data: diagrams } = await supabase
     .from("diagrams")
     .select("id, title, updated_at")
     .order("updated_at", { ascending: false });
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("plan")
+    .eq("id", user.id)
+    .single();
+
+  const isUpgraded = (await searchParams).upgraded === "true";
+
   return (
     <>
       <Header />
       <main className="wrap page" style={{ minHeight: "60vh" }}>
         
-        {/* Account Overview Section */}
+        {/* Success Banner */}
+        {isUpgraded && (
+          <div style={{ background: "#E4F1E9", border: "1px solid #2E6B45", color: "#2E6B45", padding: 16, borderRadius: 8, marginBottom: 32, textAlign: "center", fontWeight: 600 }}>
+            🎉 Payment successful! Welcome to MethodFlow Pro. Your account has been upgraded.
+          </div>
+        )}
+
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 24, marginBottom: 48 }}>
           <div>
             <h1 style={{ marginBottom: 8 }}>Your Workspace</h1>
             <p style={{ margin: 0, fontSize: 16 }}>
               Signed in as <strong>{user.email}</strong>
             </p>
-            <p style={{ margin: "8px 0 0", fontSize: 14, color: "var(--slate)" }}>
-              Plan: <span style={{ background: "#E4F1E9", color: "#2E6B45", padding: "2px 8px", borderRadius: 4, fontWeight: 600 }}>Free Tier</span>
+            <p style={{ margin: "8px 0 0", fontSize: 14 }}>
+              Plan: <span style={{ background: profile?.plan === "pro" ? "#E4F1E9" : "var(--wash)", color: profile?.plan === "pro" ? "#2E6B45" : "var(--slate)", padding: "2px 8px", borderRadius: 4, fontWeight: 600, textTransform: "capitalize" }}>{profile?.plan || "Free"} Tier</span>
             </p>
           </div>
           
           <div style={{ display: "flex", gap: 12 }}>
-            <Link href="/pricing" className="btn ghost" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-              Upgrade to Pro
-            </Link>
+            {profile?.plan !== "pro" && (
+              <Link href="/pricing" className="btn ghost" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                Upgrade to Pro
+              </Link>
+            )}
             <Link href="/app" className="btn">+ New Flowchart</Link>
           </div>
         </div>

@@ -17,9 +17,12 @@ export default function PricingPage() {
       });
       const data = await res.json();
       
-      if (!res.ok) throw new Error(data.message || "Failed to create checkout");
+      if (data.redirect) {
+        window.location.href = data.redirect;
+        return;
+      }
+      if (!res.ok) throw new Error(data.message || "Checkout failed");
       
-      // Redirect the user to the Lemon Squeezy secure checkout page
       window.location.href = data.url;
     } catch (err: any) {
       setError(err.message);
@@ -30,75 +33,65 @@ export default function PricingPage() {
   return (
     <>
       <Header />
-      <main className="wrap page" style={{ maxWidth: 900 }}>
+      <main className="wrap page" style={{ maxWidth: 1000 }}>
         <div style={{ textAlign: "center", marginBottom: 48 }}>
-          <h1 style={{ fontSize: 42 }}>Upgrade to MethodFlow Pro</h1>
+          <h1 style={{ fontSize: 42 }}>Simple, transparent pricing</h1>
           <p style={{ fontSize: 18, color: "var(--graphite)", marginTop: 12 }}>
-            Unlock unlimited generations, PDF uploads, and thesis-ready Word/LaTeX exports.
+            Start for free. Upgrade when you're ready to write your thesis.
           </p>
-          {error && <p style={{ color: "var(--danger)", marginTop: 16 }}>{error}</p>}
+          {error && <p style={{ color: "var(--danger)", marginTop: 16, fontWeight: 600 }}>{error}</p>}
         </div>
         
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24, alignItems: "stretch" }}>
           
-          {/* Monthly Plan */}
-          <div className="plate" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column" }}>
-            <h2 style={{ fontSize: 24, marginBottom: 8 }}>Monthly</h2>
-            <p style={{ fontSize: 36, fontWeight: "bold", margin: "16px 0" }}>$5 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ month</span></p>
-            <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 24 }}>Flexible billing. Cancel anytime.</p>
-            <button 
-              onClick={() => handleUpgrade("monthly")} 
-              disabled={loading !== null}
-              className="pri wide" 
-              style={{ padding: 12 }}
-            >
-              {loading === "monthly" ? "Redirecting..." : "Select Monthly"}
+          {/* Free Plan */}
+          <div className="plate" style={{ padding: 32, display: "flex", flexDirection: "column" }}>
+            <h2 style={{ fontSize: 24, marginBottom: 8 }}>Free</h2>
+            <p style={{ fontSize: 36, fontWeight: "bold", margin: "16px 0" }}>$0</p>
+            <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 24 }}>Perfect for testing the tool.</p>
+            <ul style={{ listStyle: "none", padding: 0, marginBottom: 32, fontSize: 14, color: "var(--graphite)", display: "grid", gap: 12 }}>
+              <li>✓ 3 AI generations / day</li>
+              <li>✓ Basic styling & templates</li>
+              <li>✓ PNG & SVG export (watermarked)</li>
+              <li style={{ color: "#ccc" }}>✗ No PDF upload</li>
+              <li style={{ color: "#ccc" }}>✗ No Word/LaTeX export</li>
+            </ul>
+            <button disabled className="wide" style={{ padding: 12, background: "var(--wash)", border: "1px solid var(--line)", color: "var(--slate)" }}>Current Plan</button>
+          </div>
+
+          {/* Pro Monthly */}
+          <div className="plate" style={{ padding: 32, display: "flex", flexDirection: "column", borderColor: "var(--accent)", borderWidth: 2 }}>
+            <h2 style={{ fontSize: 24, marginBottom: 8 }}>Pro Monthly</h2>
+            <p style={{ fontSize: 36, fontWeight: "bold", margin: "16px 0" }}>$5 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ mo</span></p>
+            <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 24 }}>Cancel anytime.</p>
+            <ul style={{ listStyle: "none", padding: 0, marginBottom: 32, fontSize: 14, color: "var(--graphite)", display: "grid", gap: 12 }}>
+              <li>✓ Unlimited AI generations</li>
+              <li>✓ Smart PDF & DOCX Upload</li>
+              <li>✓ Word & LaTeX (TikZ) exports</li>
+              <li>✓ Cloud save & dashboard</li>
+              <li>✓ Zero watermarks</li>
+            </ul>
+            <button onClick={() => handleUpgrade("monthly")} disabled={loading !== null} className="pri wide" style={{ padding: 12 }}>
+              {loading === "monthly" ? "Loading..." : "Upgrade to Pro"}
             </button>
           </div>
 
-          {/* Half-Yearly Plan */}
-          <div className="plate" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column" }}>
-            <h2 style={{ fontSize: 24, marginBottom: 8 }}>Half-Yearly</h2>
-            <p style={{ fontSize: 36, fontWeight: "bold", margin: "16px 0" }}>$24 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ 6 months</span></p>
-            <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 24 }}>Save 20%. Perfect for a semester.</p>
-            <button 
-              onClick={() => handleUpgrade("half-yearly")} 
-              disabled={loading !== null}
-              className="pri wide" 
-              style={{ padding: 12 }}
-            >
-              {loading === "half-yearly" ? "Redirecting..." : "Select Half-Yearly"}
+          {/* Pro Yearly (Highlighted) */}
+          <div className="plate" style={{ padding: 32, display: "flex", flexDirection: "column", borderColor: "var(--ink)", borderWidth: 2, position: "relative" }}>
+            <div style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "var(--ink)", color: "#fff", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: "bold", letterSpacing: 1 }}>BEST VALUE</div>
+            <h2 style={{ fontSize: 24, marginBottom: 8 }}>Pro Yearly</h2>
+            <p style={{ fontSize: 36, fontWeight: "bold", margin: "16px 0" }}>$36 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ yr</span></p>
+            <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 24 }}>Save 40%. Perfect for a full thesis.</p>
+            <ul style={{ listStyle: "none", padding: 0, marginBottom: 32, fontSize: 14, color: "var(--graphite)", display: "grid", gap: 12 }}>
+              <li>✓ Everything in Monthly</li>
+              <li>✓ Advanced Reasoning Engine</li>
+              <li>✓ Priority support</li>
+            </ul>
+            <button onClick={() => handleUpgrade("yearly")} disabled={loading !== null} className="pri wide" style={{ padding: 12 }}>
+              {loading === "yearly" ? "Loading..." : "Get Yearly Discount"}
             </button>
           </div>
 
-          {/* Yearly Plan (Highlighted) */}
-          <div className="plate" style={{ padding: 32, textAlign: "center", borderColor: "var(--accent)", borderWidth: 2, position: "relative", display: "flex", flexDirection: "column" }}>
-            <div style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "#fff", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: "bold", letterSpacing: 1 }}>BEST VALUE</div>
-            <h2 style={{ fontSize: 24, marginBottom: 8 }}>Yearly</h2>
-            <p style={{ fontSize: 36, fontWeight: "bold", margin: "16px 0" }}>$36 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ year</span></p>
-            <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 24 }}>Save 40%. Best for completing a full thesis.</p>
-            <button 
-              onClick={() => handleUpgrade("yearly")} 
-              disabled={loading !== null}
-              className="pri wide" 
-              style={{ padding: 12 }}
-            >
-              {loading === "yearly" ? "Redirecting..." : "Select Yearly"}
-            </button>
-          </div>
-
-        </div>
-
-        <div style={{ marginTop: 64, textAlign: "center" }}>
-          <h3 style={{ fontSize: 22, marginBottom: 16 }}>Everything included in Pro:</h3>
-          <ul style={{ listStyle: "none", padding: 0, color: "var(--graphite)", lineHeight: 2 }}>
-            <li>Unlimited AI Generations & Refinements</li>
-            <li>Smart PDF & DOCX Upload</li>
-            <li>Advanced Reasoning Engine for complex logic</li>
-            <li>Word (.docx) and LaTeX (TikZ) Exports</li>
-            <li>Cloud Save & Cross-Device Access</li>
-            <li>Zero Watermarks on all exports</li>
-          </ul>
         </div>
       </main>
       <Footer />

@@ -9,18 +9,24 @@ lemonSqueezySetup({ apiKey: process.env.LEMONSQUEEZY_API_KEY! });
 
 export async function POST(req: NextRequest) {
   try {
-    const { plan } = await req.json(); // "monthly", "half-yearly", or "yearly"
+    const { plan } = await req.json();
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) return fail("BAD_REQUEST", 401);
+    // If user is not logged in, tell the frontend to redirect to login
+    if (!user) {
+      return ok({ redirect: "/login?next=/pricing" });
+    }
 
-    // Map the plan string to the actual Variant ID from your .env file
     let variantId = "";
     if (plan === "monthly") variantId = process.env.LEMONSQUEEZY_VARIANT_MONTHLY!;
     else if (plan === "half-yearly") variantId = process.env.LEMONSQUEEZY_VARIANT_HALF_YEARLY!;
     else if (plan === "yearly") variantId = process.env.LEMONSQUEEZY_VARIANT_YEARLY!;
-    else return fail("BAD_REQUEST", 400);
+
+    if (!variantId) {
+      console.error("Missing Variant ID for plan:", plan);
+      return fail("SERVER", 500);
+    }
 
     const checkout = await createCheckout(
       process.env.LEMONSQUEEZY_STORE_ID!,
@@ -28,9 +34,7 @@ export async function POST(req: NextRequest) {
       {
         checkoutData: {
           email: user.email,
-          custom: {
-            user_id: user.id, // This links the payment back to your Supabase user
-          },
+          custom: { user_id: user.id },
         },
         productOptions: {
           redirectUrl: `${req.nextUrl.origin}/dashboard?upgraded=true`,
@@ -38,9 +42,7 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    if (!checkout.data?.data.attributes.url) {
-      throw new Error("Could not create checkout URL");
-    }
+    if (!checkout.data?.data.attributes.url) throw new Error("No checkout URL");
 
     return ok({ url: checkout.data.data.attributes.url });
   } catch (e: any) {
