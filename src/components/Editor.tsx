@@ -57,6 +57,7 @@ const[code,setCode]=useState<{title:string;text:string}|null>(null);const[grp,se
 const[page,setPage]=useState<PageSettings>(DEFAULT_PAGE);
 const[cloudId,setCloudId]=useState<string|null>(null);
 const[user,setUser]=useState<User|null>(null);
+const[plan,setPlan]=useState<"free"|"pro">("free");
 
 const booted=useRef(false);const irRef=useRef(ir);irRef.current=ir;
 const checks=useMemo(()=>validateGraph(ir),[ir]);
@@ -105,9 +106,27 @@ const groupBoxes = useMemo(() => {
 
 useEffect(()=>{
   const supabase = createClient();
-  supabase.auth.getUser().then(({data})=> setUser(data.user));
+  
+  const fetchUserAndPlan = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setUser(user);
+    if (user) {
+      const { data: profile } = await supabase.from("profiles").select("plan").eq("id", user.id).single();
+      if (profile) setPlan(profile.plan as "free" | "pro");
+    }
+  };
+  
+  fetchUserAndPlan();
+
   const {data: authListener} = supabase.auth.onAuthStateChange((_, session) => {
     setUser(session?.user ?? null);
+    if (session?.user) {
+      supabase.from("profiles").select("plan").eq("id", session.user.id).single().then(({data}) => {
+        if (data) setPlan(data.plan as "free" | "pro");
+      });
+    } else {
+      setPlan("free");
+    }
   });
   return () => authListener.subscription.unsubscribe();
 },[]);
@@ -187,6 +206,11 @@ async function gen(){setBusy(true);setMsg("");try{const r=await fetch("/api/gene
 
 async function upload(file?: File) {
   if (!file) return;
+  if (plan === "free") {
+    setMsg("Upgrade to Pro to upload and extract methodology from PDFs.");
+    window.location.href = "/pricing";
+    return;
+  }
   setUploadedFile(file.name);
   setBusy(true); 
   setMsg(`Extracting text from ${file.name}...`);
@@ -248,14 +272,20 @@ async function doRefine(){
   }catch{setMsg("Network error. Your diagram is unchanged.")}finally{setBusy(false)}
 }
 
-async function exp(k:string){setMenu(false);const d=useDiagram.getState().ir;const n=slug(d.meta.title);setMsg("");try{
-if(k==="svg")download(new Blob([toSVG(d,page.theme,page.font).svg],{type:"image/svg+xml"}),n+".svg");
-else if(k==="png")download((await toPng(d,page)).blob,n+".png");
-else if(k==="pdf")download(await toPdf(d,page),n+".pdf");
-else if(k==="docx")download(await toDocx(d,page),n+".docx");
-else if(k==="json")download(new Blob([JSON.stringify(d,null,2)],{type:"application/json"}),n+".methodflow.json");
-else if(k==="mermaid")setCode({title:"Mermaid",text:toMermaid(d)});
-else if(k==="tikz")setCode({title:"LaTeX (TikZ)",text:toTikz(d)})}catch{setMsg("Export failed. Try PNG or SVG.")}}
+async function exp(k:string){
+  if ((k === "docx" || k === "tikz") && plan === "free") {
+    setMsg("Upgrade to Pro to export to Word or LaTeX.");
+    window.location.href = "/pricing";
+    return;
+  }
+  setMenu(false);const d=useDiagram.getState().ir;const n=slug(d.meta.title);setMsg("");try{
+  if(k==="svg")download(new Blob([toSVG(d,page.theme,page.font).svg],{type:"image/svg+xml"}),n+".svg");
+  else if(k==="png")download((await toPng(d,page)).blob,n+".png");
+  else if(k==="pdf")download(await toPdf(d,page),n+".pdf");
+  else if(k==="docx")download(await toDocx(d,page),n+".docx");
+  else if(k==="json")download(new Blob([JSON.stringify(d,null,2)],{type:"application/json"}),n+".methodflow.json");
+  else if(k==="mermaid")setCode({title:"Mermaid",text:toMermaid(d)});
+  else if(k==="tikz")setCode({title:"LaTeX (TikZ)",text:toTikz(d)})}catch{setMsg("Export failed. Try PNG or SVG.")}}
 async function share(){setMenu(false);setMsg("");try{const r=await fetch("/api/share",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ir:useDiagram.getState().ir})});const j=await r.json();if(!r.ok){setMsg(j.message||"Could not create a link.");return}setCode({title:"Read-only link (kept 90 days)",text:location.origin+"/s/"+j.slug})}catch{setMsg("Network error. No link was created.")}}
 async function imp(f?:File){if(!f)return;if(f.size>2e5){setMsg("File is too large.");return}const ir2=parseIR(await f.text());if(!ir2){setMsg("That file is not a MethodFlow JSON diagram.");return}useDiagram.getState().commit(placed(ir2));useDiagram.setState(x=>({rev:x.rev+1}))}
 
