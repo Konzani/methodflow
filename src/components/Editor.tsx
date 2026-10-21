@@ -175,22 +175,43 @@ async function handleSignOut() {
 }
 
 async function saveCloud() {
+  // 1. Check if user is logged in
+  if (!user) {
+    setMsg("Please sign in to save to the cloud.");
+    window.location.href = "/login";
+    return;
+  }
+
+  // 2. Check if user is on Free tier
+  if (plan === "free") {
+    setMsg("Upgrade to Pro to save your diagrams to the cloud.");
+    window.location.href = "/pricing";
+    return;
+  }
+
+  // 3. Pro users (and trial users) proceed to save
   setBusy(true); setMsg("Saving to cloud...");
   try {
     const supabase = createClient();
-    if (!user) {
-      setMsg("Please sign in to save to the cloud.");
-      setBusy(false);
-      return;
-    }
     const d = useDiagram.getState().ir;
+    
     if (cloudId) {
-      const { error } = await supabase.from("diagrams").update({ ir: d, title: d.meta.title, updated_at: new Date().toISOString() }).eq("id", cloudId);
+      // Update existing diagram
+      const { error } = await supabase
+        .from("diagrams")
+        .update({ ir: d, title: d.meta.title, updated_at: new Date().toISOString() })
+        .eq("id", cloudId);
       if (error) throw error;
       setMsg("Saved to cloud.");
     } else {
-      const { data, error } = await supabase.from("diagrams").insert({ user_id: user.id, ir: d, title: d.meta.title }).select("id").single();
+      // Create new diagram
+      const { data, error } = await supabase
+        .from("diagrams")
+        .insert({ user_id: user.id, ir: d, title: d.meta.title })
+        .select("id")
+        .single();
       if (error) throw error;
+      
       setCloudId(data.id);
       window.history.replaceState(null, '', `?id=${data.id}`);
       setMsg("Saved to cloud.");
