@@ -55,7 +55,29 @@ return`<path d="${d}" fill="none" stroke="${ink}" stroke-width="1.3"${e.dashed?'
 const nodes=[...pos.values()].map(p=>{const x=p.x,y=p.y;const c=colors(p.n,pal);const L=wrap(p.n.label,p.n.shape==="decision"?16:p.n.shape==="database"?20:24);const lh=15;const y0=y+p.h/2-((L.length-1)*lh)/2+4+(p.n.shape==="database"?5:0);
 return shape(p.n,x,y,p.w,p.h,c.fill,c.stroke)+`<text font-size="13" fill="${c.text}" text-anchor="middle">${L.map((l,i)=>`<tspan x="${x+p.w/2}" y="${y0+i*lh}">${esc(l)}</tspan>`).join("")}</text>`}).join("");
 
-const watermarkSvg = watermark ? `<text x="${W - 24}" y="${H - 20}" font-size="14" fill="#9ca3af" font-family="Arial, sans-serif" text-anchor="end" opacity="0.8">Generated with MethodFlow</text>` : "";
+// Professional, minimalist watermark:
+// 1. A very faint, elegant pattern in the background
+// 2. A tiny, clean brand mark in the bottom right corner
+const wmPattern = watermark ? `
+  <pattern id="wm-pattern" width="400" height="400" patternUnits="userSpaceOnUse" patternTransform="rotate(-30)">
+    <text x="20" y="200" font-family="Georgia, serif" font-size="48" fill="#000" opacity="0.03" font-weight="600" letter-spacing="0.05em">MethodFlow</text>
+  </pattern>
+` : "";
 
-const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${ff}" role="img" aria-label="${esc(ir.meta.title)}"><defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${ink}"/></marker></defs><rect width="100%" height="100%" fill="${pal.canvas}"/>${groups}${edges}${nodes}${watermarkSvg}</svg>`;
+const wmRect = watermark ? `<rect width="100%" height="100%" fill="url(#wm-pattern)" />` : "";
+const wmBadge = watermark ? `<text x="${W - 24}" y="${H - 20}" font-family="Arial, sans-serif" font-size="11" fill="#9ca3af" text-anchor="end" letter-spacing="0.05em">MethodFlow</text>` : "";
+
+const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${ff}" role="img" aria-label="${esc(ir.meta.title)}">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${ink}"/></marker>
+    ${wmPattern}
+  </defs>
+  <rect width="100%" height="100%" fill="${pal.canvas}"/>
+  ${wmRect}
+  ${groups}
+  ${edges}
+  ${nodes}
+  ${wmBadge}
+</svg>`;
+
 return{svg,w:W,h:H}}

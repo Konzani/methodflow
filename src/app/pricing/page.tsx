@@ -9,6 +9,7 @@ export default function PricingPage() {
   const [error, setError] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [plan, setPlan] = useState<"free" | "pro" | "guest">("guest");
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -57,6 +58,23 @@ export default function PricingPage() {
   const Check = () => <span style={{ color: "var(--accent)", fontWeight: "bold", marginRight: 8 }}>✓</span>;
   const Cross = () => <span style={{ color: "#ccc", marginRight: 8 }}>✗</span>;
 
+  const cardStyle = (id: string, isHighlighted: boolean): React.CSSProperties => ({
+    padding: 32, 
+    display: "flex", 
+    flexDirection: "column", 
+    background: "#fff", 
+    border: isHighlighted ? "2px solid var(--accent)" : hoveredCard === id ? "1px solid var(--slate)" : "1px solid var(--line)",
+    borderRadius: "var(--r)",
+    position: "relative",
+    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+    transform: hoveredCard === id ? "translateY(-8px)" : "translateY(0)",
+    boxShadow: hoveredCard === id 
+      ? (isHighlighted ? "0 20px 40px rgba(29,59,92,0.15)" : "0 12px 24px rgba(0,0,0,0.06)") 
+      : (isHighlighted ? "0 12px 32px rgba(29,59,92,0.08)" : "none"),
+    zIndex: isHighlighted ? 10 : 1,
+    marginTop: 16 // Gives space for the badge
+  });
+
   return (
     <>
       <Header />
@@ -89,11 +107,15 @@ export default function PricingPage() {
           gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", 
           gap: 24, 
           alignItems: "stretch",
-          marginTop: 32
+          paddingTop: 16 // Extra space for hover lift
         }}>
           
           {/* Free Plan */}
-          <div className="plate" style={{ padding: 32, display: "flex", flexDirection: "column", background: "var(--wash)", border: "1px solid var(--line)" }}>
+          <div 
+            onMouseEnter={() => setHoveredCard("free")}
+            onMouseLeave={() => setHoveredCard(null)}
+            style={cardStyle("free", false)}
+          >
             <h2 style={{ fontSize: 20, marginBottom: 8, fontFamily: "var(--sans)" }}>Free</h2>
             <p style={{ fontSize: 40, fontWeight: "bold", margin: "16px 0 24px" }}>$0</p>
             <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 32, fontSize: 15 }}>Perfect for exploring the tool and basic diagrams.</p>
@@ -112,7 +134,11 @@ export default function PricingPage() {
           </div>
 
           {/* Pro Monthly */}
-          <div className="plate" style={{ padding: 32, display: "flex", flexDirection: "column", background: "#fff", border: "1px solid var(--line)" }}>
+          <div 
+            onMouseEnter={() => setHoveredCard("monthly")}
+            onMouseLeave={() => setHoveredCard(null)}
+            style={cardStyle("monthly", false)}
+          >
             <h2 style={{ fontSize: 20, marginBottom: 8, fontFamily: "var(--sans)" }}>Pro Monthly</h2>
             <p style={{ fontSize: 40, fontWeight: "bold", margin: "16px 0 24px" }}>$5 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ mo</span></p>
             <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 32, fontSize: 15 }}>Flexible billing for short projects.</p>
@@ -124,13 +150,17 @@ export default function PricingPage() {
               <li><Check /> Word & LaTeX (TikZ) export</li>
               <li><Check /> Zero watermarks</li>
             </ul>
-            <button onClick={() => handleUpgrade("monthly")} disabled={loading !== null || plan === "pro"} className="wide" style={{ padding: 14, border: "1px solid var(--ink)", background: "#fff", color: "var(--ink)", borderRadius: "var(--r)", fontWeight: 600, opacity: plan === "pro" ? 0.5 : 1 }}>
+            <button onClick={() => handleUpgrade("monthly")} disabled={loading !== null || plan === "pro"} className="wide" style={{ padding: 14, border: "1px solid var(--ink)", background: hoveredCard === "monthly" && plan !== "pro" ? "var(--ink)" : "#fff", color: hoveredCard === "monthly" && plan !== "pro" ? "#fff" : "var(--ink)", borderRadius: "var(--r)", fontWeight: 600, transition: "all 0.2s", opacity: plan === "pro" ? 0.5 : 1 }}>
               {loading === "monthly" ? "Loading..." : plan === "pro" ? "Active Plan" : "Select Monthly"}
             </button>
           </div>
 
           {/* Pro Half-Yearly */}
-          <div className="plate" style={{ padding: 32, display: "flex", flexDirection: "column", background: "#fff", border: "1px solid var(--line)" }}>
+          <div 
+            onMouseEnter={() => setHoveredCard("half-yearly")}
+            onMouseLeave={() => setHoveredCard(null)}
+            style={cardStyle("half-yearly", false)}
+          >
             <h2 style={{ fontSize: 20, marginBottom: 8, fontFamily: "var(--sans)" }}>Pro Half-Yearly</h2>
             <p style={{ fontSize: 40, fontWeight: "bold", margin: "16px 0 24px" }}>$24 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ 6 mo</span></p>
             <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 32, fontSize: 15 }}>Save 20%. Ideal for a single semester.</p>
@@ -142,14 +172,18 @@ export default function PricingPage() {
               <li><Check /> Word & LaTeX (TikZ) export</li>
               <li><Check /> Zero watermarks</li>
             </ul>
-            <button onClick={() => handleUpgrade("half-yearly")} disabled={loading !== null || plan === "pro"} className="wide" style={{ padding: 14, border: "1px solid var(--ink)", background: "#fff", color: "var(--ink)", borderRadius: "var(--r)", fontWeight: 600, opacity: plan === "pro" ? 0.5 : 1 }}>
+            <button onClick={() => handleUpgrade("half-yearly")} disabled={loading !== null || plan === "pro"} className="wide" style={{ padding: 14, border: "1px solid var(--ink)", background: hoveredCard === "half-yearly" && plan !== "pro" ? "var(--ink)" : "#fff", color: hoveredCard === "half-yearly" && plan !== "pro" ? "#fff" : "var(--ink)", borderRadius: "var(--r)", fontWeight: 600, transition: "all 0.2s", opacity: plan === "pro" ? 0.5 : 1 }}>
               {loading === "half-yearly" ? "Loading..." : plan === "pro" ? "Active Plan" : "Select Half-Yearly"}
             </button>
           </div>
 
           {/* Pro Yearly (Highlighted) */}
-          <div className="plate" style={{ padding: 32, display: "flex", flexDirection: "column", background: "#fff", border: "2px solid var(--accent)", position: "relative", boxShadow: "0 12px 32px rgba(29,59,92,0.08)" }}>
-            <div style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "#fff", padding: "6px 16px", borderRadius: 24, fontSize: 11, fontWeight: "bold", letterSpacing: 1, whiteSpace: "nowrap" }}>BEST VALUE</div>
+          <div 
+            onMouseEnter={() => setHoveredCard("yearly")}
+            onMouseLeave={() => setHoveredCard(null)}
+            style={cardStyle("yearly", true)}
+          >
+            <div style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "#fff", padding: "6px 16px", borderRadius: 24, fontSize: 11, fontWeight: "bold", letterSpacing: 1, whiteSpace: "nowrap", boxShadow: "0 4px 12px rgba(29,59,92,0.2)" }}>BEST VALUE</div>
             
             <h2 style={{ fontSize: 20, marginBottom: 8, fontFamily: "var(--sans)", color: "var(--accent)" }}>Pro Yearly</h2>
             <p style={{ fontSize: 40, fontWeight: "bold", margin: "16px 0 24px" }}>$36 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ yr</span></p>
@@ -162,7 +196,7 @@ export default function PricingPage() {
               <li><Check /> Word & LaTeX (TikZ) export</li>
               <li><Check /> Zero watermarks</li>
             </ul>
-            <button onClick={() => handleUpgrade("yearly")} disabled={loading !== null || plan === "pro"} className="pri wide" style={{ padding: 14, borderRadius: "var(--r)", fontWeight: 600, opacity: plan === "pro" ? 0.5 : 1 }}>
+            <button onClick={() => handleUpgrade("yearly")} disabled={loading !== null || plan === "pro"} className="pri wide" style={{ padding: 14, borderRadius: "var(--r)", fontWeight: 600, opacity: plan === "pro" ? 0.5 : 1, transition: "all 0.2s", transform: hoveredCard === "yearly" && plan !== "pro" ? "scale(1.02)" : "scale(1)" }}>
               {loading === "yearly" ? "Loading..." : plan === "pro" ? "Active Plan" : "Select Yearly"}
             </button>
           </div>
