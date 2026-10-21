@@ -4,224 +4,463 @@ import { Header, Footer } from "@/components/Chrome";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
+type Plan = "free" | "pro";
+type Status = "loading" | "guest" | Plan;
+type Billing = "monthly" | "half-yearly" | "yearly";
+
+const MONTHLY_PRICE = 5;
+
+const BILLING: Record<
+  Billing,
+  { label: string; price: number; months: number; cadence: string; blurb: string }
+> = {
+  monthly: { label: "Monthly", price: 5, months: 1, cadence: "month", blurb: "Flexible billing for short projects." },
+  "half-yearly": { label: "6 months", price: 24, months: 6, cadence: "6 months", blurb: "Covers a full semester." },
+  yearly: { label: "Yearly", price: 36, months: 12, cadence: "year", blurb: "Covers your whole thesis, start to submission." },
+};
+
+const BILLING_ORDER: Billing[] = ["monthly", "half-yearly", "yearly"];
+
+const savings = (b: Billing) =>
+  Math.round((1 - BILLING[b].price / BILLING[b].months / MONTHLY_PRICE) * 100);
+
+const perMonth = (b: Billing) => {
+  const v = BILLING[b].price / BILLING[b].months;
+  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+};
+
+const FREE_FEATURES = [
+  "3 AI generations per day",
+  "Standard AI model",
+  "Basic styling and palettes",
+  "PNG and SVG export",
+];
+
+const PRO_FEATURES = [
+  "Unlimited AI generations",
+  "Advanced reasoning engine",
+  "PDF and DOCX upload",
+  "Cloud save and dashboard",
+  "Word and LaTeX (TikZ) export",
+  "No watermarks",
+];
+
+// true = included, false = not included, string = shown as text
+const COMPARE: { feature: string; free: boolean | string; pro: boolean | string }[] = [
+  { feature: "AI generations", free: "3 per day", pro: "Unlimited" },
+  { feature: "AI model", free: "Standard", pro: "Advanced reasoning" },
+  { feature: "PNG and SVG export", free: true, pro: true },
+  { feature: "Watermark on exports", free: "Yes", pro: "None" },
+  { feature: "PDF and DOCX upload", free: false, pro: true },
+  { feature: "Cloud save and dashboard", free: false, pro: true },
+  { feature: "Word (.docx) export", free: false, pro: true },
+  { feature: "LaTeX (TikZ) export", free: false, pro: true },
+];
+
+// TODO: confirm every answer below matches your real policy before shipping.
+const FAQ = [
+  {
+    q: "What counts as an AI generation?",
+    a: "Each time you ask the AI to build or rebuild a diagram from your text or an uploaded document. Editing styles, colours and layout by hand doesn't use one.",
+  },
+  {
+    q: "Can I cancel anytime?",
+    a: "Yes. You keep Pro until the end of the period you've paid for. After that your account returns to Free.",
+  },
+  {
+    q: "Do you offer refunds?",
+    a: "Email us within 7 days of your first payment and we'll sort it out.",
+  },
+  {
+    q: "How do I pay?",
+    a: "Checkout is handled by Lemon Squeezy, which shows the payment methods available in your country.",
+  },
+];
+
+const css = `
+.pf-wrap { max-width: 1040px; padding-top: 64px; padding-bottom: 96px; }
+.pf-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 24px; align-items: stretch; }
+.pf-card { background: #fff; border: 1px solid var(--line); border-radius: var(--r); padding: 32px; display: flex; flex-direction: column; }
+.pf-card.pro { border: 2px solid var(--accent); box-shadow: 0 12px 32px rgba(29,59,92,0.08); }
+.pf-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; background: var(--wash); border: 1px solid var(--line); border-radius: var(--r); margin: 20px 0 8px; }
+.pf-seg button { border: 0; background: transparent; padding: 10px 6px; border-radius: calc(var(--r) - 2px); cursor: pointer; font: inherit; font-size: 14px; font-weight: 600; color: var(--graphite); display: grid; gap: 2px; justify-items: center; line-height: 1.2; }
+.pf-seg button small { font-size: 12px; font-weight: 500; color: var(--slate); }
+.pf-seg button[aria-checked="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+.pf-seg button[aria-checked="true"] small { color: var(--accent); }
+.pf-seg button:hover:not([aria-checked="true"]) { color: var(--ink); }
+.pf-list { list-style: none; padding: 0; margin: 0 0 32px; display: grid; gap: 12px; font-size: 15px; color: var(--graphite); }
+.pf-list li { display: flex; gap: 10px; align-items: baseline; }
+.pf-tick { color: var(--accent); font-weight: 700; flex: none; }
+.pf-cta { width: 100%; padding: 14px; border-radius: var(--r); font-weight: 600; font-size: 16px; cursor: pointer; text-align: center; text-decoration: none; display: block; box-sizing: border-box; }
+.pf-cta[disabled] { opacity: 0.55; cursor: not-allowed; }
+.pf-cta.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+.pf-cta.ghost:hover { border-color: var(--slate); }
+.pf-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.pf-table th, .pf-table td { padding: 16px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+.pf-table thead th { font-size: 14px; color: var(--graphite); border-bottom: 2px solid var(--line); }
+.pf-table th[scope="row"] { font-weight: 500; }
+.pf-table td { width: 22%; color: var(--graphite); }
+.pf-table td.pro, .pf-table thead th.pro { color: var(--ink); font-weight: 600; }
+.pf-no { color: #b5b5b5; }
+.pf-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.pf-faq details { border-bottom: 1px solid var(--line); padding: 20px 0; }
+.pf-faq summary { cursor: pointer; font-weight: 600; font-size: 17px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+.pf-faq summary::-webkit-details-marker { display: none; }
+.pf-faq summary::after { content: "+"; color: var(--slate); font-weight: 400; font-size: 22px; line-height: 1; }
+.pf-faq details[open] summary::after { content: "\\2212"; }
+.pf-faq p { margin: 12px 0 0; color: var(--graphite); max-width: 640px; }
+.pf-wrap :is(button, a, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 820px) {
+  .pf-grid { grid-template-columns: minmax(0, 1fr); }
+  .pf-card { padding: 24px; }
+  .pf-table th, .pf-table td { padding: 14px 6px; font-size: 14px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pf-seg button, .pf-cta { transition: background 0.15s, border-color 0.15s, color 0.15s; }
+}
+`;
+
 export default function PricingPage() {
-  const [loading, setLoading] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [status, setStatus] = useState<Status>("loading");
   const [user, setUser] = useState<User | null>(null);
-  const [plan, setPlan] = useState<"free" | "pro" | "guest">("guest");
-  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+  const [billing, setBilling] = useState<Billing>("yearly");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
     const supabase = createClient();
-    const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-      if (user) {
-        const { data: profile } = await supabase.from("profiles").select("plan").eq("id", user.id).single();
-        if (profile) setPlan(profile.plan as "free" | "pro");
-        else setPlan("free");
-      } else {
-        setPlan("guest");
+
+    (async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (cancelled) return;
+        setUser(user);
+        if (!user) {
+          setStatus("guest");
+          return;
+        }
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("plan")
+          .eq("id", user.id)
+          .single();
+        if (!cancelled) setStatus(profile?.plan === "pro" ? "pro" : "free");
+      } catch {
+        if (!cancelled) setStatus("guest");
       }
+    })();
+
+    // Returning from checkout via the back button restores the page with the
+    // button still stuck on "Redirecting...", so reset it.
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) setLoading(false);
     };
-    fetchUser();
+    window.addEventListener("pageshow", onShow);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("pageshow", onShow);
+    };
   }, []);
 
-  const handleUpgrade = async (selectedPlan: string) => {
+  const handleUpgrade = async () => {
     if (!user) {
-      window.location.href = `/login?next=/pricing`;
+      window.location.href = `/login?next=${encodeURIComponent("/pricing")}`;
       return;
     }
-    setLoading(selectedPlan);
+    setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/lemonsqueezy/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: selectedPlan }),
+        body: JSON.stringify({ plan: billing }),
       });
-      const data = await res.json();
-      
+      let data: { redirect?: string; url?: string; message?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        /* non-JSON response, handled below */
+      }
       if (data.redirect) {
         window.location.href = data.redirect;
         return;
       }
-      if (!res.ok) throw new Error(data.message || "Checkout failed");
-      
+      if (!res.ok || !data.url) {
+        throw new Error(data.message || "We couldn't start checkout. Please try again.");
+      }
       window.location.href = data.url;
-    } catch (err: any) {
-      setError(err.message);
-      setLoading(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setLoading(false);
     }
   };
 
-  const Check = () => <span style={{ color: "var(--accent)", fontWeight: "bold", marginRight: 8 }}>✓</span>;
-  const Cross = () => <span style={{ color: "#ccc", marginRight: 8 }}>✗</span>;
+  const isPro = status === "pro";
+  const b = BILLING[billing];
+  const save = savings(billing);
 
-  const cardStyle = (id: string, isHighlighted: boolean): React.CSSProperties => ({
-    padding: 32, 
-    display: "flex", 
-    flexDirection: "column", 
-    background: "#fff", 
-    border: isHighlighted ? "2px solid var(--accent)" : hoveredCard === id ? "1px solid var(--slate)" : "1px solid var(--line)",
-    borderRadius: "var(--r)",
-    position: "relative",
-    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-    transform: hoveredCard === id ? "translateY(-8px)" : "translateY(0)",
-    boxShadow: hoveredCard === id 
-      ? (isHighlighted ? "0 20px 40px rgba(29,59,92,0.15)" : "0 12px 24px rgba(0,0,0,0.06)") 
-      : (isHighlighted ? "0 12px 32px rgba(29,59,92,0.08)" : "none"),
-    zIndex: isHighlighted ? 10 : 1,
-    marginTop: 16 // Gives space for the badge
-  });
+  const proLabel = loading
+    ? "Opening checkout..."
+    : isPro
+    ? "You're on Pro"
+    : `Upgrade to Pro for $${b.price} per ${b.cadence}`;
 
   return (
     <>
       <Header />
-      <main className="wrap page" style={{ maxWidth: 1200, paddingTop: 64, paddingBottom: 96 }}>
-        
+      <style>{css}</style>
+      <main className="wrap page pf-wrap">
         <div style={{ textAlign: "center", marginBottom: 48 }}>
-          <h1 style={{ fontSize: 48, letterSpacing: "-0.02em", marginBottom: 16 }}>Simple, transparent pricing.</h1>
-          <p style={{ fontSize: 18, color: "var(--graphite)", maxWidth: 600, margin: "0 auto" }}>
-            Start for free. Upgrade when you're ready to generate thesis-ready diagrams with our most advanced AI.
+          <h1 style={{ fontSize: 48, letterSpacing: "-0.02em", marginBottom: 16 }}>
+            Simple, transparent pricing
+          </h1>
+          <p style={{ fontSize: 18, color: "var(--graphite)", maxWidth: 560, margin: "0 auto" }}>
+            Start free. Upgrade when you need unlimited generations, document upload and watermark-free exports for your thesis.
           </p>
-          {error && <p style={{ color: "var(--danger)", marginTop: 24, fontWeight: 600, background: "#FBE6EC", padding: "12px 24px", borderRadius: 8, display: "inline-block" }}>{error}</p>}
         </div>
 
-        {/* Pro User Banner */}
-        {plan === "pro" && (
-          <div style={{ background: "#E4F1E9", border: "1px solid #2E6B45", color: "#2E6B45", padding: 16, borderRadius: 8, marginBottom: 40, textAlign: "center", fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span>You are currently subscribed to MethodFlow Pro.</span>
-            <a href="/dashboard" className="btn" style={{ background: "#2E6B45", color: "#fff", padding: "8px 16px", textDecoration: "none" }}>Go to Dashboard</a>
+        <div aria-live="polite">
+          {error && (
+            <p
+              role="alert"
+              style={{
+                color: "var(--danger)",
+                fontWeight: 600,
+                background: "#FBE6EC",
+                padding: "12px 20px",
+                borderRadius: 8,
+                margin: "0 auto 32px",
+                maxWidth: 560,
+                textAlign: "center",
+              }}
+            >
+              {error}
+            </p>
+          )}
+        </div>
+
+        {isPro && (
+          <div
+            style={{
+              background: "#E4F1E9",
+              border: "1px solid #2E6B45",
+              color: "#2E6B45",
+              padding: 16,
+              borderRadius: 8,
+              marginBottom: 32,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 16,
+              flexWrap: "wrap",
+            }}
+          >
+            <span>You're subscribed to MethodFlow Pro.</span>
+            <a
+              href="/dashboard"
+              className="btn"
+              style={{ background: "#2E6B45", color: "#fff", padding: "8px 16px", textDecoration: "none" }}
+            >
+              Go to dashboard
+            </a>
           </div>
         )}
 
-        {plan === "guest" && (
-          <div style={{ background: "var(--wash)", border: "1px solid var(--line)", padding: 16, borderRadius: 8, marginBottom: 40, textAlign: "center" }}>
-            <span style={{ color: "var(--graphite)" }}>You are browsing as a guest. <a href="/login?next=/pricing" style={{ fontWeight: 600, color: "var(--accent)" }}>Sign in</a> to manage your subscription.</span>
-          </div>
+        {status === "guest" && (
+          <p
+            style={{
+              background: "var(--wash)",
+              border: "1px solid var(--line)",
+              padding: 16,
+              borderRadius: 8,
+              marginBottom: 32,
+              textAlign: "center",
+              color: "var(--graphite)",
+            }}
+          >
+            You're browsing as a guest.{" "}
+            <a href="/login?next=/pricing" style={{ fontWeight: 600, color: "var(--accent)" }}>
+              Sign in
+            </a>{" "}
+            to upgrade or manage your plan.
+          </p>
         )}
-        
-        <div style={{ 
-          display: "grid", 
-          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", 
-          gap: 24, 
-          alignItems: "stretch",
-          paddingTop: 16 // Extra space for hover lift
-        }}>
-          
-          {/* Free Plan */}
-          <div 
-            onMouseEnter={() => setHoveredCard("free")}
-            onMouseLeave={() => setHoveredCard(null)}
-            style={cardStyle("free", false)}
-          >
-            <h2 style={{ fontSize: 20, marginBottom: 8, fontFamily: "var(--sans)" }}>Free</h2>
-            <p style={{ fontSize: 40, fontWeight: "bold", margin: "16px 0 24px" }}>$0</p>
-            <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 32, fontSize: 15 }}>Perfect for exploring the tool and basic diagrams.</p>
-            <ul style={{ listStyle: "none", padding: 0, marginBottom: 32, fontSize: 14, color: "var(--graphite)", display: "grid", gap: 16 }}>
-              <li><Check /> 3 AI generations / day</li>
-              <li><Check /> Standard AI model</li>
-              <li><Check /> Basic styling & palettes</li>
-              <li><Check /> PNG & SVG export</li>
-              <li><Cross /> <span style={{ color: "#aaa" }}>No watermarks removed</span></li>
-              <li><Cross /> <span style={{ color: "#aaa" }}>No PDF/DOCX upload</span></li>
-              <li><Cross /> <span style={{ color: "#aaa" }}>No Word/LaTeX export</span></li>
-            </ul>
-            <button disabled className="wide" style={{ padding: 14, background: "transparent", border: "1px solid var(--line)", color: "var(--slate)", borderRadius: "var(--r)" }}>
-              {plan === "free" ? "Current Plan" : plan === "pro" ? "Included in Pro" : "Get Started"}
-            </button>
-          </div>
 
-          {/* Pro Monthly */}
-          <div 
-            onMouseEnter={() => setHoveredCard("monthly")}
-            onMouseLeave={() => setHoveredCard(null)}
-            style={cardStyle("monthly", false)}
-          >
-            <h2 style={{ fontSize: 20, marginBottom: 8, fontFamily: "var(--sans)" }}>Pro Monthly</h2>
-            <p style={{ fontSize: 40, fontWeight: "bold", margin: "16px 0 24px" }}>$5 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ mo</span></p>
-            <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 32, fontSize: 15 }}>Flexible billing for short projects.</p>
-            <ul style={{ listStyle: "none", padding: 0, marginBottom: 32, fontSize: 14, color: "var(--graphite)", display: "grid", gap: 16 }}>
-              <li><Check /> Unlimited AI generations</li>
-              <li><Check /> Advanced Reasoning Engine</li>
-              <li><Check /> Smart PDF & DOCX Upload</li>
-              <li><Check /> Cloud save & Dashboard</li>
-              <li><Check /> Word & LaTeX (TikZ) export</li>
-              <li><Check /> Zero watermarks</li>
+        <div className="pf-grid">
+          {/* Free */}
+          <section className="pf-card" aria-labelledby="plan-free">
+            <h2 id="plan-free" style={{ fontSize: 20, fontFamily: "var(--sans)", marginBottom: 8 }}>
+              Free
+            </h2>
+            <p style={{ fontSize: 48, fontWeight: 700, lineHeight: 1, margin: "16px 0 8px" }}>$0</p>
+            <p style={{ color: "var(--graphite)", marginBottom: 32, fontSize: 15 }}>
+              Try the tool and make basic diagrams. Exports carry a watermark.
+            </p>
+            <ul className="pf-list" style={{ flex: 1 }}>
+              {FREE_FEATURES.map((f) => (
+                <li key={f}>
+                  <span className="pf-tick" aria-hidden="true">✓</span>
+                  {f}
+                </li>
+              ))}
             </ul>
-            <button onClick={() => handleUpgrade("monthly")} disabled={loading !== null || plan === "pro"} className="wide" style={{ padding: 14, border: "1px solid var(--ink)", background: hoveredCard === "monthly" && plan !== "pro" ? "var(--ink)" : "#fff", color: hoveredCard === "monthly" && plan !== "pro" ? "#fff" : "var(--ink)", borderRadius: "var(--r)", fontWeight: 600, transition: "all 0.2s", opacity: plan === "pro" ? 0.5 : 1 }}>
-              {loading === "monthly" ? "Loading..." : plan === "pro" ? "Active Plan" : "Select Monthly"}
-            </button>
-          </div>
+            {status === "guest" || status === "loading" ? (
+              <a href="/login?next=/dashboard" className="pf-cta ghost">
+                Start free
+              </a>
+            ) : (
+              <button className="pf-cta ghost" disabled>
+                {isPro ? "Included in Pro" : "Your current plan"}
+              </button>
+            )}
+          </section>
 
-          {/* Pro Half-Yearly */}
-          <div 
-            onMouseEnter={() => setHoveredCard("half-yearly")}
-            onMouseLeave={() => setHoveredCard(null)}
-            style={cardStyle("half-yearly", false)}
-          >
-            <h2 style={{ fontSize: 20, marginBottom: 8, fontFamily: "var(--sans)" }}>Pro Half-Yearly</h2>
-            <p style={{ fontSize: 40, fontWeight: "bold", margin: "16px 0 24px" }}>$24 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ 6 mo</span></p>
-            <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 32, fontSize: 15 }}>Save 20%. Ideal for a single semester.</p>
-            <ul style={{ listStyle: "none", padding: 0, marginBottom: 32, fontSize: 14, color: "var(--graphite)", display: "grid", gap: 16 }}>
-              <li><Check /> Unlimited AI generations</li>
-              <li><Check /> Advanced Reasoning Engine</li>
-              <li><Check /> Smart PDF & DOCX Upload</li>
-              <li><Check /> Cloud save & Dashboard</li>
-              <li><Check /> Word & LaTeX (TikZ) export</li>
-              <li><Check /> Zero watermarks</li>
+          {/* Pro */}
+          <section className="pf-card pro" aria-labelledby="plan-pro">
+            <h2 id="plan-pro" style={{ fontSize: 20, fontFamily: "var(--sans)", marginBottom: 0, color: "var(--accent)" }}>
+              Pro
+            </h2>
+
+            <div className="pf-seg" role="radiogroup" aria-label="Billing period">
+              {BILLING_ORDER.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="radio"
+                  aria-checked={billing === key}
+                  onClick={() => setBilling(key)}
+                  disabled={loading}
+                >
+                  {BILLING[key].label}
+                  <small>{key === "monthly" ? "No commitment" : `Save ${savings(key)}%`}</small>
+                </button>
+              ))}
+            </div>
+
+            <p style={{ fontSize: 48, fontWeight: 700, lineHeight: 1, margin: "20px 0 8px" }}>
+              ${perMonth(billing)}
+              <span style={{ fontSize: 16, fontWeight: 400, color: "var(--slate)" }}> / month</span>
+            </p>
+            <p style={{ fontSize: 14, color: "var(--slate)", margin: "0 0 8px" }}>
+              Billed ${b.price} every {b.months === 1 ? "month" : b.cadence}.
+              {save > 0 && ` You save ${save}% compared with monthly.`}
+            </p>
+            <p style={{ color: "var(--graphite)", marginBottom: 28, fontSize: 15 }}>{b.blurb}</p>
+
+            <ul className="pf-list" style={{ flex: 1 }}>
+              {PRO_FEATURES.map((f) => (
+                <li key={f}>
+                  <span className="pf-tick" aria-hidden="true">✓</span>
+                  {f}
+                </li>
+              ))}
             </ul>
-            <button onClick={() => handleUpgrade("half-yearly")} disabled={loading !== null || plan === "pro"} className="wide" style={{ padding: 14, border: "1px solid var(--ink)", background: hoveredCard === "half-yearly" && plan !== "pro" ? "var(--ink)" : "#fff", color: hoveredCard === "half-yearly" && plan !== "pro" ? "#fff" : "var(--ink)", borderRadius: "var(--r)", fontWeight: 600, transition: "all 0.2s", opacity: plan === "pro" ? 0.5 : 1 }}>
-              {loading === "half-yearly" ? "Loading..." : plan === "pro" ? "Active Plan" : "Select Half-Yearly"}
-            </button>
-          </div>
 
-          {/* Pro Yearly (Highlighted) */}
-          <div 
-            onMouseEnter={() => setHoveredCard("yearly")}
-            onMouseLeave={() => setHoveredCard(null)}
-            style={cardStyle("yearly", true)}
-          >
-            <div style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "#fff", padding: "6px 16px", borderRadius: 24, fontSize: 11, fontWeight: "bold", letterSpacing: 1, whiteSpace: "nowrap", boxShadow: "0 4px 12px rgba(29,59,92,0.2)" }}>BEST VALUE</div>
-            
-            <h2 style={{ fontSize: 20, marginBottom: 8, fontFamily: "var(--sans)", color: "var(--accent)" }}>Pro Yearly</h2>
-            <p style={{ fontSize: 40, fontWeight: "bold", margin: "16px 0 24px" }}>$36 <span style={{ fontSize: 16, fontWeight: "normal", color: "var(--slate)" }}>/ yr</span></p>
-            <p style={{ color: "var(--graphite)", flex: 1, marginBottom: 32, fontSize: 15 }}>Save 40%. The best choice for your full thesis.</p>
-            <ul style={{ listStyle: "none", padding: 0, marginBottom: 32, fontSize: 14, color: "var(--graphite)", display: "grid", gap: 16 }}>
-              <li><Check /> Unlimited AI generations</li>
-              <li><Check /> Advanced Reasoning Engine</li>
-              <li><Check /> Smart PDF & DOCX Upload</li>
-              <li><Check /> Cloud save & Dashboard</li>
-              <li><Check /> Word & LaTeX (TikZ) export</li>
-              <li><Check /> Zero watermarks</li>
-            </ul>
-            <button onClick={() => handleUpgrade("yearly")} disabled={loading !== null || plan === "pro"} className="pri wide" style={{ padding: 14, borderRadius: "var(--r)", fontWeight: 600, opacity: plan === "pro" ? 0.5 : 1, transition: "all 0.2s", transform: hoveredCard === "yearly" && plan !== "pro" ? "scale(1.02)" : "scale(1)" }}>
-              {loading === "yearly" ? "Loading..." : plan === "pro" ? "Active Plan" : "Select Yearly"}
+            <button
+              type="button"
+              className="pri pf-cta"
+              onClick={handleUpgrade}
+              disabled={loading || isPro || status === "loading"}
+            >
+              {proLabel}
             </button>
-          </div>
-
+            <p style={{ fontSize: 13, color: "var(--slate)", textAlign: "center", margin: "12px 0 0" }}>
+              Secure checkout by Lemon Squeezy.
+            </p>
+          </section>
         </div>
 
-        {/* Feature Comparison Table */}
-        <div style={{ marginTop: 96, maxWidth: 800, margin: "96px auto 0" }}>
-          <h2 style={{ fontSize: 28, textAlign: "center", marginBottom: 40 }}>Everything you need to finish your thesis</h2>
-          <div style={{ display: "grid", gap: 24 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 24, paddingBottom: 24, borderBottom: "1px solid var(--line)" }}>
-              <h3 style={{ fontSize: 18, fontFamily: "var(--sans)" }}>Advanced Reasoning Engine</h3>
-              <p style={{ color: "var(--graphite)" }}>Access our highest-tier AI model, specifically designed to untangle complex, multi-stage methodologies like PRISMA, Machine Learning, and Mixed Methods.</p>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 24, paddingBottom: 24, borderBottom: "1px solid var(--line)" }}>
-              <h3 style={{ fontSize: 18, fontFamily: "var(--sans)" }}>Smart PDF & DOCX Upload</h3>
-              <p style={{ color: "var(--graphite)" }}>Drag and drop your research proposal. Our AI reads the document, extracts the methodology, and builds the flowchart instantly.</p>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 24, paddingBottom: 24, borderBottom: "1px solid var(--line)" }}>
-              <h3 style={{ fontSize: 18, fontFamily: "var(--sans)" }}>Publication-Ready Exports</h3>
-              <p style={{ color: "var(--graphite)" }}>Export directly to Word (.docx) with auto-numbered captions, or copy flawless LaTeX (TikZ) code for Overleaf. All exports are completely free of watermarks.</p>
-            </div>
-          </div>
-        </div>
+        {/* Comparison */}
+        <section style={{ marginTop: 96, maxWidth: 800, marginLeft: "auto", marginRight: "auto" }}>
+          <h2 style={{ fontSize: 28, textAlign: "center", marginBottom: 32 }}>
+            Everything you need to finish your thesis
+          </h2>
 
+          <table className="pf-table">
+            <caption className="pf-sr">Free and Pro compared</caption>
+            <thead>
+              <tr>
+                <th scope="col">Feature</th>
+                <th scope="col">Free</th>
+                <th scope="col" className="pro">Pro</th>
+              </tr>
+            </thead>
+            <tbody>
+              {COMPARE.map((row) => (
+                <tr key={row.feature}>
+                  <th scope="row">{row.feature}</th>
+                  {(["free", "pro"] as const).map((col) => {
+                    const v = row[col];
+                    return (
+                      <td key={col} className={col === "pro" ? "pro" : undefined}>
+                        {typeof v === "string" ? (
+                          v
+                        ) : v ? (
+                          <>
+                            <span className="pf-tick" aria-hidden="true">✓</span>
+                            <span className="pf-sr">Included</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="pf-no" aria-hidden="true">–</span>
+                            <span className="pf-sr">Not included</span>
+                          </>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ display: "grid", gap: 24, marginTop: 56 }}>
+            {[
+              {
+                t: "Advanced reasoning engine",
+                d: "Our most capable model, built for multi-stage methodologies such as PRISMA, machine learning pipelines and mixed methods.",
+              },
+              {
+                t: "PDF and DOCX upload",
+                d: "Drop in your research proposal. The AI reads it, pulls out the methodology and builds the flowchart for you.",
+              },
+              {
+                t: "Publication-ready export",
+                d: "Export to Word with auto-numbered captions, or copy LaTeX (TikZ) code straight into Overleaf. Pro exports have no watermark.",
+              },
+            ].map((x) => (
+              <div
+                key={x.t}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 16,
+                  paddingBottom: 24,
+                  borderBottom: "1px solid var(--line)",
+                }}
+              >
+                <h3 style={{ fontSize: 18, fontFamily: "var(--sans)" }}>{x.t}</h3>
+                <p style={{ color: "var(--graphite)", gridColumn: "span 2", maxWidth: 520 }}>{x.d}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* FAQ */}
+        <section className="pf-faq" style={{ marginTop: 96, maxWidth: 800, marginLeft: "auto", marginRight: "auto" }}>
+          <h2 style={{ fontSize: 28, textAlign: "center", marginBottom: 24 }}>Questions</h2>
+          {FAQ.map((item) => (
+            <details key={item.q}>
+              <summary>{item.q}</summary>
+              <p>{item.a}</p>
+            </details>
+          ))}
+        </section>
       </main>
       <Footer />
     </>
