@@ -3,6 +3,7 @@ import { IRSchema, METHODS } from "@/lib/core/ir";
 import { generate } from "@/lib/llm";
 import { budgetOk, ipOf, limit, spend } from "@/lib/ratelimit";
 import { fail, ok } from "@/lib/http";
+import { createClient } from "@/lib/supabase/server";
 import { extractText, getDocumentProxy } from "unpdf";
 // @ts-ignore
 import mammoth from "mammoth";
@@ -17,11 +18,18 @@ export async function POST(req: NextRequest) {
     }
     if (!await budgetOk()) return fail("BUDGET", 503);
 
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return fail("BAD_REQUEST", 401);
+
+    const { data: profile } = await supabase.from("profiles").select("plan").eq("id", user.id).single();
+    if (profile?.plan !== "pro") return fail("BAD_REQUEST", 403);
+
     const formData = await req.formData();
     const file = formData.get("file") as File;
 
     if (!file) return fail("BAD_REQUEST", 400);
-    if (file.size > 4 * 1024 * 1024) return fail("TOO_LARGE", 413); // 4MB limit for Vercel
+    if (file.size > 4 * 1024 * 1024) return fail("TOO_LARGE", 413);
 
     let text = "";
     const buffer = new Uint8Array(await file.arrayBuffer());
@@ -47,7 +55,6 @@ export async function POST(req: NextRequest) {
       return fail("SERVER", 500); 
     }
 
-    // Clean the text
     text = text
       .replace(/\r\n/g, "\n")
       .replace(/[ \t]+/g, " ")
@@ -61,7 +68,6 @@ export async function POST(req: NextRequest) {
       text = text.slice(0, 25000) + "\n[Text truncated due to length...]";
     }
     
-    // Ensure we have enough text to generate a flowchart
     if (text.length < 500) {
       return fail("BAD_REQUEST", 400); 
     }
@@ -71,6 +77,7 @@ export async function POST(req: NextRequest) {
       text,
       extra: "Generated from uploaded document.",
       warnings: [],
+      isPro: true
     });
 
     await spend(g.cost);

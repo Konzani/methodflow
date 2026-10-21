@@ -5,6 +5,7 @@ import { cleanText } from "@/lib/core/sanitize";
 import { refine } from "@/lib/llm";
 import { budgetOk, ipOf, limit, spend } from "@/lib/ratelimit";
 import { fail, ok } from "@/lib/http";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -24,9 +25,17 @@ export async function POST(req: NextRequest) {
     
     if (!await limit("gen", ipOf(req.headers), req.cookies.get("mf_id")?.value)) return fail("RATE_LIMITED", 429);
     if (!await budgetOk()) return fail("BUDGET", 503);
+
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    let isPro = false;
+    if (user) {
+      const { data: profile } = await supabase.from("profiles").select("plan").eq("id", user.id).single();
+      isPro = profile?.plan === "pro";
+    }
     
     const t = cleanText(p.data.instruction, 500);
-    const g = await refine({ ir: p.data.ir, instruction: t.text });
+    const g = await refine({ ir: p.data.ir, instruction: t.text, isPro });
     
     await spend(g.cost);
     return ok({ ir: g.ir, warnings: [...t.warnings, ...g.warnings] });

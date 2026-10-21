@@ -279,10 +279,10 @@ async function exp(k:string){
     return;
   }
   setMenu(false);const d=useDiagram.getState().ir;const n=slug(d.meta.title);setMsg("");try{
-  if(k==="svg")download(new Blob([toSVG(d,page.theme,page.font).svg],{type:"image/svg+xml"}),n+".svg");
-  else if(k==="png")download((await toPng(d,page)).blob,n+".png");
-  else if(k==="pdf")download(await toPdf(d,page),n+".pdf");
-  else if(k==="docx")download(await toDocx(d,page),n+".docx");
+  if(k==="svg")download(new Blob([toSVG(d,page.theme,page.font,undefined,plan==="free").svg],{type:"image/svg+xml"}),n+".svg");
+  else if(k==="png")download((await toPng(d,page,plan==="free")).blob,n+".png");
+  else if(k==="pdf")download(await toPdf(d,page,plan==="free"),n+".pdf");
+  else if(k==="docx")download(await toDocx(d,page,plan==="free"),n+".docx");
   else if(k==="json")download(new Blob([JSON.stringify(d,null,2)],{type:"application/json"}),n+".methodflow.json");
   else if(k==="mermaid")setCode({title:"Mermaid",text:toMermaid(d)});
   else if(k==="tikz")setCode({title:"LaTeX (TikZ)",text:toTikz(d)})}catch{setMsg("Export failed. Try PNG or SVG.")}}

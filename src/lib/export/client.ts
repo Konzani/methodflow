@@ -68,15 +68,15 @@ const dataUrl = (b: Blob) =>
     f.readAsDataURL(b);
   });
 
-export async function toPng(ir: IR, page: PageSettings) {
-  const { svg, w, h } = toSVG(ir, page.theme, page.font);
+export async function toPng(ir: IR, page: PageSettings, watermark = false) {
+  const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
   const fit = computeFit(w, h, page);
   const blob = await svgToPngBlob(svg, fit.pxW, fit.pxH);
   return { blob, ...fit, w, h };
 }
 
-export async function toPdf(ir: IR, page: PageSettings) {
-  const { svg, w, h } = toSVG(ir, page.theme, page.font);
+export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
+  const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
   const fit = computeFit(w, h, page);
   const png = await svgToPngBlob(svg, fit.pxW, fit.pxH);
   const { jsPDF } = await import("jspdf");
@@ -90,7 +90,6 @@ export async function toPdf(ir: IR, page: PageSettings) {
   const y = (dims.h - fit.mmH) / 2 - 4; 
   doc.addImage(await dataUrl(png), "PNG", x, y, fit.mmW, fit.mmH);
   
-  // Removed "Figure 1." - uses only the title/caption the user provided
   const caption = ir.meta.caption || ir.meta.title;
   if (caption) {
     doc.setFontSize(10);
@@ -102,8 +101,8 @@ export async function toPdf(ir: IR, page: PageSettings) {
   return doc.output("blob");
 }
 
-export async function toDocx(ir: IR, page: PageSettings) {
-  const { svg, w, h } = toSVG(ir, page.theme, page.font);
+export async function toDocx(ir: IR, page: PageSettings, watermark = false) {
+  const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
   const fit = computeFit(w, h, page);
   const png = await svgToPngBlob(svg, fit.pxW, fit.pxH);
   const {
@@ -114,8 +113,6 @@ export async function toDocx(ir: IR, page: PageSettings) {
   const dims = pageSizeMM(page);
   const data = new Uint8Array(await png.arrayBuffer());
 
-  // Calculate exact pixel width/height for Word using the page dimensions (A4 at 96 DPI)
-  // This ensures the image fits perfectly inside the margins, just like the PDF.
   const contentWidthPx = (dims.w - 2 * page.margin) * 3.7795; 
   const contentHeightPx = (dims.h - 2 * page.margin) * 3.7795;
   const scale = Math.min(contentWidthPx / w, contentHeightPx / h, 1.5);
