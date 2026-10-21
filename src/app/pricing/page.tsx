@@ -1,19 +1,43 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Header, Footer } from "@/components/Chrome";
+import { createClient } from "@/lib/supabase/client";
+import type { User } from "@supabase/supabase-js";
 
 export default function PricingPage() {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [user, setUser] = useState<User | null>(null);
+  const [plan, setPlan] = useState<"free" | "pro" | "guest">("guest");
 
-  const handleUpgrade = async (plan: string) => {
-    setLoading(plan);
+  useEffect(() => {
+    const supabase = createClient();
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      if (user) {
+        const { data: profile } = await supabase.from("profiles").select("plan").eq("id", user.id).single();
+        if (profile) setPlan(profile.plan as "free" | "pro");
+        else setPlan("free");
+      } else {
+        setPlan("guest");
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const handleUpgrade = async (selectedPlan: string) => {
+    if (!user) {
+      window.location.href = `/login?next=/pricing`;
+      return;
+    }
+    setLoading(selectedPlan);
     setError("");
     try {
       const res = await fetch("/api/lemonsqueezy/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan: selectedPlan }),
       });
       const data = await res.json();
       
@@ -38,13 +62,27 @@ export default function PricingPage() {
       <Header />
       <main className="wrap page" style={{ maxWidth: 1200, paddingTop: 64, paddingBottom: 96 }}>
         
-        <div style={{ textAlign: "center", marginBottom: 64 }}>
+        <div style={{ textAlign: "center", marginBottom: 48 }}>
           <h1 style={{ fontSize: 48, letterSpacing: "-0.02em", marginBottom: 16 }}>Simple, transparent pricing.</h1>
           <p style={{ fontSize: 18, color: "var(--graphite)", maxWidth: 600, margin: "0 auto" }}>
             Start for free. Upgrade when you're ready to generate thesis-ready diagrams with our most advanced AI.
           </p>
           {error && <p style={{ color: "var(--danger)", marginTop: 24, fontWeight: 600, background: "#FBE6EC", padding: "12px 24px", borderRadius: 8, display: "inline-block" }}>{error}</p>}
         </div>
+
+        {/* Pro User Banner */}
+        {plan === "pro" && (
+          <div style={{ background: "#E4F1E9", border: "1px solid #2E6B45", color: "#2E6B45", padding: 16, borderRadius: 8, marginBottom: 40, textAlign: "center", fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>You are currently subscribed to MethodFlow Pro.</span>
+            <a href="/dashboard" className="btn" style={{ background: "#2E6B45", color: "#fff", padding: "8px 16px", textDecoration: "none" }}>Go to Dashboard</a>
+          </div>
+        )}
+
+        {plan === "guest" && (
+          <div style={{ background: "var(--wash)", border: "1px solid var(--line)", padding: 16, borderRadius: 8, marginBottom: 40, textAlign: "center" }}>
+            <span style={{ color: "var(--graphite)" }}>You are browsing as a guest. <a href="/login?next=/pricing" style={{ fontWeight: 600, color: "var(--accent)" }}>Sign in</a> to manage your subscription.</span>
+          </div>
+        )}
         
         <div style={{ 
           display: "grid", 
@@ -68,7 +106,9 @@ export default function PricingPage() {
               <li><Cross /> <span style={{ color: "#aaa" }}>No PDF/DOCX upload</span></li>
               <li><Cross /> <span style={{ color: "#aaa" }}>No Word/LaTeX export</span></li>
             </ul>
-            <button disabled className="wide" style={{ padding: 14, background: "transparent", border: "1px solid var(--line)", color: "var(--slate)", borderRadius: "var(--r)" }}>Current Plan</button>
+            <button disabled className="wide" style={{ padding: 14, background: "transparent", border: "1px solid var(--line)", color: "var(--slate)", borderRadius: "var(--r)" }}>
+              {plan === "free" ? "Current Plan" : plan === "pro" ? "Included in Pro" : "Get Started"}
+            </button>
           </div>
 
           {/* Pro Monthly */}
@@ -84,8 +124,8 @@ export default function PricingPage() {
               <li><Check /> Word & LaTeX (TikZ) export</li>
               <li><Check /> Zero watermarks</li>
             </ul>
-            <button onClick={() => handleUpgrade("monthly")} disabled={loading !== null} className="wide" style={{ padding: 14, border: "1px solid var(--ink)", background: "#fff", color: "var(--ink)", borderRadius: "var(--r)", fontWeight: 600 }}>
-              {loading === "monthly" ? "Loading..." : "Select Monthly"}
+            <button onClick={() => handleUpgrade("monthly")} disabled={loading !== null || plan === "pro"} className="wide" style={{ padding: 14, border: "1px solid var(--ink)", background: "#fff", color: "var(--ink)", borderRadius: "var(--r)", fontWeight: 600, opacity: plan === "pro" ? 0.5 : 1 }}>
+              {loading === "monthly" ? "Loading..." : plan === "pro" ? "Active Plan" : "Select Monthly"}
             </button>
           </div>
 
@@ -102,8 +142,8 @@ export default function PricingPage() {
               <li><Check /> Word & LaTeX (TikZ) export</li>
               <li><Check /> Zero watermarks</li>
             </ul>
-            <button onClick={() => handleUpgrade("half-yearly")} disabled={loading !== null} className="wide" style={{ padding: 14, border: "1px solid var(--ink)", background: "#fff", color: "var(--ink)", borderRadius: "var(--r)", fontWeight: 600 }}>
-              {loading === "half-yearly" ? "Loading..." : "Select Half-Yearly"}
+            <button onClick={() => handleUpgrade("half-yearly")} disabled={loading !== null || plan === "pro"} className="wide" style={{ padding: 14, border: "1px solid var(--ink)", background: "#fff", color: "var(--ink)", borderRadius: "var(--r)", fontWeight: 600, opacity: plan === "pro" ? 0.5 : 1 }}>
+              {loading === "half-yearly" ? "Loading..." : plan === "pro" ? "Active Plan" : "Select Half-Yearly"}
             </button>
           </div>
 
@@ -122,14 +162,14 @@ export default function PricingPage() {
               <li><Check /> Word & LaTeX (TikZ) export</li>
               <li><Check /> Zero watermarks</li>
             </ul>
-            <button onClick={() => handleUpgrade("yearly")} disabled={loading !== null} className="pri wide" style={{ padding: 14, borderRadius: "var(--r)", fontWeight: 600 }}>
-              {loading === "yearly" ? "Loading..." : "Select Yearly"}
+            <button onClick={() => handleUpgrade("yearly")} disabled={loading !== null || plan === "pro"} className="pri wide" style={{ padding: 14, borderRadius: "var(--r)", fontWeight: 600, opacity: plan === "pro" ? 0.5 : 1 }}>
+              {loading === "yearly" ? "Loading..." : plan === "pro" ? "Active Plan" : "Select Yearly"}
             </button>
           </div>
 
         </div>
 
-        {/* Feature Comparison Table (Optional but adds premium feel) */}
+        {/* Feature Comparison Table */}
         <div style={{ marginTop: 96, maxWidth: 800, margin: "96px auto 0" }}>
           <h2 style={{ fontSize: 28, textAlign: "center", marginBottom: 40 }}>Everything you need to finish your thesis</h2>
           <div style={{ display: "grid", gap: 24 }}>
