@@ -3,7 +3,7 @@ import{useEffect,useMemo,useRef,useState}from"react";
 import Link from"next/link";
 import{ReactFlow,Background,Controls,Handle,Position,MarkerType,ReactFlowProvider,useNodesState,useEdgesState,useReactFlow,ViewportPortal,type Node,type Edge,type NodeProps}from"@xyflow/react";
 import"@xyflow/react/dist/style.css";
-import{IRSchema,METHODS,SHAPES,DENSITIES,type Method,type Shape,type Density,type PaletteId}from"@/lib/core/ir";
+import{IRSchema,METHODS,SHAPES,DENSITIES,type Method,type Shape,type Density,type PaletteId,type FlowDirection}from"@/lib/core/ir";
 import{validateGraph}from"@/lib/core/validate";
 import{TEMPLATES,getTemplate}from"@/lib/templates";
 import{loadDraft,parseIR,saveDraft}from"@/lib/persist";
@@ -24,6 +24,7 @@ type D={label:string;shape:Shape;fill?:string;stroke?:string;text?:string;w?:num
 const ML:Record<Method,string>={quantitative:"Quantitative",qualitative:"Qualitative",mixed:"Mixed methods",prisma:"Systematic review (PRISMA)",consort:"Randomised trial (CONSORT)",dsr:"Design science",survey:"Survey",experimental:"Experimental",custom:"Other"};
 const SL:Record<Shape,string>={process:"Step",decision:"Decision",terminator:"Start / end",data:"Data",document:"Document",database:"Database"};
 const DL:Record<Density,string>={compact:"Compact",balanced:"Balanced",spacious:"Spacious"};
+const FL:Record<FlowDirection,string>={auto:"Auto",tb:"Top to bottom",lr:"Left to right"};
 
 function MFNode({data,selected}:NodeProps<Node<D>>){
   const w = data.w || 200;
@@ -59,6 +60,7 @@ const[status,setStatus]=useState("");const[msg,setMsg]=useState("");const[busy,s
 const[method,setMethod]=useState<Method>("quantitative");const[text,setText]=useState("");const[extra,setExtra]=useState("");
 const[refineText,setRefineText]=useState("");
 const[uploadedFile,setUploadedFile]=useState<string|null>(null);
+const[showGuide,setShowGuide]=useState(true);
 const[menu,setMenu]=useState(false);const[panel,setPanel]=useState<"l"|"r"|null>(null);
 const[code,setCode]=useState<{title:string;text:string}|null>(null);const[grp,setGrp]=useState("");
 const[page,setPage]=useState<PageSettings>(DEFAULT_PAGE);
@@ -373,6 +375,9 @@ return(<div className="app">
 <button onClick={s.undo} disabled={!past.length} aria-label="Undo">Undo</button>
 <button onClick={s.redo} disabled={!future.length} aria-label="Redo">Redo</button>
 <button onClick={s.relayout}>Auto-layout</button>
+<button onClick={()=>setShowGuide(!showGuide)}>
+  {showGuide ? "Hide A4" : "Show A4"}
+</button>
 
 {user ? (
   <div className="row" style={{ alignItems: "center", gap: 8, marginLeft: 8 }}>
@@ -467,14 +472,16 @@ onNodeDragStop={(_,n)=>s.move(n.id,Math.round(n.position.x),Math.round(n.positio
 onNodesDelete={d=>s.remove(d.map(n=>n.id),[])} onEdgesDelete={d=>s.remove([],d.map(e=>e.id))}
 deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} maxZoom={2} fitView>
 <ViewportPortal>
-  <div style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: -2 }}>
-      <svg width={pageW} height={pageH} style={{ overflow: "visible" }}>
-        <rect width="100%" height="100%" fill="#fff" stroke="#d1d5db" strokeWidth={2} style={{ filter: "drop-shadow(0px 4px 12px rgba(0,0,0,0.05))" }} />
-        <text x={pageW/2} y={-20} textAnchor="middle" fontSize={18} fill="#9ca3af" fontWeight="bold">
-          {page.size.toUpperCase()} {page.orientation.toUpperCase()} ({pw}×{ph}mm)
-        </text>
-      </svg>
-  </div>
+  {showGuide && (
+    <div style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: -2 }}>
+        <svg width={pageW} height={pageH} style={{ overflow: "visible" }}>
+          <rect width="100%" height="100%" fill="#fff" stroke="#d1d5db" strokeWidth={2} style={{ filter: "drop-shadow(0px 4px 12px rgba(0,0,0,0.05))" }} />
+          <text x={pageW/2} y={-20} textAnchor="middle" fontSize={18} fill="#9ca3af" fontWeight="bold">
+            {page.size.toUpperCase()} {page.orientation.toUpperCase()} ({pw}×{ph}mm)
+          </text>
+        </svg>
+    </div>
+  )}
   {groupBoxes}
 </ViewportPortal>
 <Background gap={24} size={1} color="#D9DEE3"/><Controls showInteractive={false}/></ReactFlow>
