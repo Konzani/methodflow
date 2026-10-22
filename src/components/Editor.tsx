@@ -28,16 +28,20 @@ const DL:Record<Density,string>={compact:"Compact",balanced:"Balanced",spacious:
 const FL:Record<FlowDirection,string>={auto:"Auto",tb:"Top to bottom",lr:"Left to right"};
 
 function MFNode({data,selected}:NodeProps<Node<D>>){const z=size(data.shape);
-const style:React.CSSProperties={width:z.w,height:z.h};
-if(data.fill)style.background=data.fill;
-if(data.stroke)style.borderColor=data.stroke;
-if(data.text)style.color=data.text;
+// CRITICAL FIX: Pass colors as CSS variables so the ::before pseudo-element picks them up
+const style = {
+  width: z.w, 
+  height: z.h,
+  "--node-fill": data.fill || "#fff",
+  "--node-stroke": data.stroke || "var(--ink)"
+} as React.CSSProperties;
+
 return(
 <div className={"mf mf-"+data.shape+(selected?" is-sel":"")} style={style}>
-{data.shape==="decision"&&<svg className="mf-dia" viewBox="0 0 200 96" preserveAspectRatio="none" aria-hidden="true"><polygon points="100,1.5 198.5,48 100,94.5 1.5,48" style={{fill:data.fill,stroke:data.stroke}}/></svg>}
+{data.shape==="decision"&&<svg className="mf-dia" viewBox="0 0 200 96" preserveAspectRatio="none" aria-hidden="true"><polygon points="100,1.5 198.5,48 100,94.5 1.5,48" style={{fill:"var(--node-fill)", stroke:"var(--node-stroke)"}}/></svg>}
 <Handle type="target" position={Position.Top} id="t"/><Handle type="source" position={Position.Bottom} id="b"/>
 <Handle type="target" position={Position.Left} id="l"/><Handle type="source" position={Position.Right} id="r"/>
-<span className="mf-t">{data.label}</span></div>)}
+<span className="mf-t" style={{color: data.text || "var(--ink)"}}>{data.label}</span></div>)}
 const nodeTypes={mf:MFNode};
 
 function Modal({title,text,onClose}:{title:string;text:string;onClose:()=>void}){const[c,setC]=useState(false);
@@ -169,6 +173,12 @@ useEffect(()=>{const t=setTimeout(()=>rf.fitView({padding:.2,duration:200}),60);
 useEffect(()=>{if(!booted.current)return;const t=setTimeout(()=>setStatus(saveDraft(ir)?"Saved in this browser":"Not saved: browser storage is blocked or full. Export JSON."),800);return()=>clearTimeout(t)},[ir]);
 useEffect(()=>{const h=()=>{if(booted.current)saveDraft(irRef.current)};const v=()=>{if(document.visibilityState==="hidden")h()};window.addEventListener("pagehide",h);document.addEventListener("visibilitychange",v);return()=>{window.removeEventListener("pagehide",h);document.removeEventListener("visibilitychange",v)}},[]);
 useEffect(()=>{const k=(e:KeyboardEvent)=>{if(/INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName))return;const m=e.metaKey||e.ctrlKey,c=e.key.toLowerCase(),g=useDiagram.getState();if(m&&c==="z"){e.preventDefault();e.shiftKey?g.redo():g.undo()}else if(m&&c==="y"){e.preventDefault();g.redo()}};window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k)},[]);
+
+function loadExample(){
+  setMethod("quantitative");
+  setText("A cross-sectional survey was conducted with 250 postgraduate students recruited through stratified random sampling. Data were collected using a validated 45-item online questionnaire. Ethical approval was obtained from the institutional review board prior to data collection. Instrument reliability was confirmed with a Cronbach's alpha of 0.89. Responses were analyzed using descriptive statistics, Pearson correlation, and hierarchical multiple regression in SPSS.");
+  setMsg("Example methodology loaded. Click 'Generate flowchart' to see the result.");
+}
 
 async function handleSignOut() {
   const supabase = createClient();
@@ -388,7 +398,21 @@ return(<div className="app">
 <h2>Generate from your method</h2>
 <label className="f">Research design<select value={method} onChange={e=>setMethod(e.target.value as Method)}>{METHODS.map(m=><option key={m} value={m}>{ML[m]}</option>)}</select></label>
 <label className="f">Key details<input value={extra} maxLength={300} onChange={e=>setExtra(e.target.value)} placeholder="Sample, instruments, analysis"/></label>
-<label className="f">Methodology text<textarea value={text} maxLength={8000} rows={6} onChange={e=>setText(e.target.value)} placeholder="Paste your methodology paragraph. Leave empty to use the standard stages."/></label>
+<label className="f">Methodology text
+  <textarea 
+    value={text} 
+    maxLength={8000} 
+    rows={10} 
+    onChange={e=>setText(e.target.value)} 
+    placeholder="e.g., A cross-sectional survey of 250 students using stratified random sampling. Data collected via a 40-item questionnaire and analyzed using multiple regression in SPSS."
+    style={{ resize: "vertical", minHeight: 180 }}
+  />
+</label>
+<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: -4, marginBottom: 8 }}>
+  <button className="note" style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }} onClick={loadExample}>
+    Try an example
+  </button>
+</div>
 <button className="pri wide" onClick={gen} disabled={busy}>{busy?"Generating…":"Generate flowchart"}</button>
 
 <div style={{ marginTop: 8, marginBottom: 24, textAlign: "center" }}>
@@ -409,6 +433,9 @@ return(<div className="app">
       style={{ display: "none" }}
     />
   </label>
+  <p className="note" style={{ marginTop: 8, fontSize: 11 }}>
+    <strong>Pro tip:</strong> Include sample size, instruments, and analysis methods in your text for the most accurate diagram.
+  </p>
 </div>
 
 <h2 style={{marginTop:16}}>Refine with AI</h2>
