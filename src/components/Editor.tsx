@@ -3,7 +3,7 @@ import{useEffect,useMemo,useRef,useState}from"react";
 import Link from"next/link";
 import{ReactFlow,Background,Controls,Handle,Position,MarkerType,ReactFlowProvider,useNodesState,useEdgesState,useReactFlow,ViewportPortal,type Node,type Edge,type NodeProps}from"@xyflow/react";
 import"@xyflow/react/dist/style.css";
-import{IRSchema,METHODS,SHAPES,DENSITIES,type Method,type Shape,type Density,type PaletteId,type FlowDirection}from"@/lib/core/ir";
+import{IRSchema,METHODS,SHAPES,DENSITIES,type Method,type Shape,type Density,type PaletteId}from"@/lib/core/ir";
 import{validateGraph}from"@/lib/core/validate";
 import{TEMPLATES,getTemplate}from"@/lib/templates";
 import{loadDraft,parseIR,saveDraft}from"@/lib/persist";
@@ -24,7 +24,6 @@ type D={label:string;shape:Shape;fill?:string;stroke?:string;text?:string;w?:num
 const ML:Record<Method,string>={quantitative:"Quantitative",qualitative:"Qualitative",mixed:"Mixed methods",prisma:"Systematic review (PRISMA)",consort:"Randomised trial (CONSORT)",dsr:"Design science",survey:"Survey",experimental:"Experimental",custom:"Other"};
 const SL:Record<Shape,string>={process:"Step",decision:"Decision",terminator:"Start / end",data:"Data",document:"Document",database:"Database"};
 const DL:Record<Density,string>={compact:"Compact",balanced:"Balanced",spacious:"Spacious"};
-const FL:Record<FlowDirection,string>={auto:"Auto",tb:"Top to bottom",lr:"Left to right"};
 
 function MFNode({data,selected}:NodeProps<Node<D>>){
   const w = data.w || 200;
@@ -77,7 +76,6 @@ const ph = isLand ? 210 : 297;
 const pageW = pw * 3.7795;
 const pageH = ph * 3.7795;
 
-// The new layout engine calculates exact group boxes. We just render them.
 const groupBoxes = useMemo(() => {
   return ir.groups.map((g: any, i) => {
     if (typeof g.x !== "number") return null;
