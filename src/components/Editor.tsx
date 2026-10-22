@@ -390,18 +390,14 @@ return(<div className="app">
   <Link href="/login" className="btn ghost" style={{ padding: "5px 10px", fontSize: 14, marginLeft: 8, textDecoration: "none" }}>Sign in</Link>
 )}
 
-<div className="menu"><button className="pri" aria-expanded={menu} onClick={()=>setMenu(!menu)}>Export</button>
-{menu&&<div className="pop" role="menu">
-<label className="f">Palette<select value={ir.meta.paletteId??"mono"} onChange={e=>s.setPalette(e.target.value as PaletteId)}>{PALETTE_LIST.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-<label className="f">Density<select value={ir.meta.density??"balanced"} onChange={e=>s.setDensity(e.target.value as Density)}>{DENSITIES.map(d=><option key={d} value={d}>{DL[d]}</option>)}</select></label>
-<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
-<label className="f">Page<select value={page.size} onChange={e=>setPage({...page,size:e.target.value as PageSettings["size"]})}><option value="a4">A4</option><option value="a5">A5</option><option value="a3">A3</option><option value="letter">Letter</option><option value="legal">Legal</option></select></label>
-<label className="f">Orientation<select value={page.orientation} onChange={e=>setPage({...page,orientation:e.target.value as PageSettings["orientation"]})}><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label>
-<label className="f">Margin mm<input type="number" min={5} max={40} value={page.margin} onChange={e=>setPage({...page,margin:Math.max(5,Math.min(40,Number(e.target.value)||20))})}/></label>
-<label className="f">Font<select value={page.font} onChange={e=>setPage({...page,font:e.target.value as PageSettings["font"]})}><option value="sans">Sans</option><option value="serif">Serif</option></select></label>
+<div className="menu">
+  <button className="pri" aria-expanded={menu} onClick={()=>setMenu(!menu)}>Export</button>
+  {menu && <div className="pop" role="menu">
+    {[["png","PNG image"],["svg","SVG vector"],["pdf","PDF"],["docx","Word (.docx) with caption"],["mermaid","Mermaid code"],["tikz","LaTeX TikZ code"],["json","JSON (re-importable)"]].map(([k,l])=><button key={k} role="menuitem" onClick={()=>exp(k)}>{l}</button>)}
+    <hr/>
+    <button role="menuitem" onClick={share}>Create read-only link</button>
+  </div>}
 </div>
-{[["png","PNG image"],["svg","SVG vector"],["pdf","PDF"],["docx","Word (.docx) with caption"],["mermaid","Mermaid code"],["tikz","LaTeX TikZ code"],["json","JSON (re-importable)"]].map(([k,l])=><button key={k} role="menuitem" onClick={()=>exp(k)}>{l}</button>)}
-<hr/><button role="menuitem" onClick={share}>Create read-only link</button></div>}</div>
 </header>
 
 <aside className="side left" data-open={panel==="l"}>
@@ -503,13 +499,24 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
 <label className="chk"><input type="checkbox" checked={!!selEdge.dashed} onChange={e=>s.patchEdge(selEdge.id,{dashed:e.target.checked||undefined})}/>Dashed line</label>
 <button className="danger" onClick={()=>s.remove([],[selEdge.id])}>Delete connector</button></>
 :<>
-<h2>Phases</h2>
+<h2>Diagram Style</h2>
+<label className="f">Palette<select value={ir.meta.paletteId??"mono"} onChange={e=>s.setPalette(e.target.value as PaletteId)}>{PALETTE_LIST.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+<label className="f">Density<select value={ir.meta.density??"balanced"} onChange={e=>s.setDensity(e.target.value as Density)}>{DENSITIES.map(d=><option key={d} value={d}>{DL[d]}</option>)}</select></label>
+<label className="f">Flow<select value={ir.meta.flowDirection??"auto"} onChange={e=>s.setFlowDirection(e.target.value as FlowDirection)}>{(Object.keys(FL) as FlowDirection[]).map(f=><option key={f} value={f}>{FL[f]}</option>)}</select></label>
+
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
+<label className="f">Page<select value={page.size} onChange={e=>setPage({...page,size:e.target.value as PageSettings["size"]})}><option value="a4">A4</option><option value="a5">A5</option><option value="a3">A3</option><option value="letter">Letter</option><option value="legal">Legal</option></select></label>
+<label className="f">Orientation<select value={page.orientation} onChange={e=>setPage({...page,orientation:e.target.value as PageSettings["orientation"]})}><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label>
+<label className="f">Margin mm<input type="number" min={5} max={40} value={page.margin} onChange={e=>setPage({...page,margin:Math.max(5,Math.min(40,Number(e.target.value)||20))})}/></label>
+<label className="f">Font<select value={page.font} onChange={e=>setPage({...page,font:e.target.value as PageSettings["font"]})}><option value="sans">Sans</option><option value="serif">Serif</option></select></label>
+</div>
+
+<h2 style={{marginTop:16}}>Phases</h2>
 <ul className="list">{ir.groups.map((g,i)=><li key={g.id} className="split"><span>{g.label}</span><span className="row" style={{gap:4}}>
 <input type="color" value={g.color??pal.groupTints[i%pal.groupTints.length]} onChange={e=>s.setGroupColor(g.id,e.target.value)} title="Phase colour" className="col"/>
 <button onClick={()=>s.removeGroup(g.id)} aria-label={"Remove "+g.label}>×</button></span></li>)}</ul>
 <form className="row" onSubmit={e=>{e.preventDefault();s.addGroup(grp);setGrp("")}}><input value={grp} maxLength={60} onChange={e=>setGrp(e.target.value)} placeholder="New phase" aria-label="New phase name"/><button type="submit">Add</button></form>
-<h2>Palette</h2>
-<select value={ir.meta.paletteId??"mono"} onChange={e=>s.setPalette(e.target.value as PaletteId)} style={{width:"100%",border:"1px solid var(--line)",borderRadius:"var(--r)",padding:"7px 8px",background:"#fff"}}>{PALETTE_LIST.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
+
 <h2>Checks</h2>
 {checks.length?<ul className="checks">{checks.map(c=><li key={c}>{c}</li>)}</ul>:<p className="note">No structural problems found.</p>}
 <p className="note">Click a step or connector to edit it. Drag from a handle to connect. Delete removes the selection.</p></>}
