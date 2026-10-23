@@ -60,6 +60,7 @@ const[method,setMethod]=useState<Method>("quantitative");const[text,setText]=use
 const[refineText,setRefineText]=useState("");
 const[uploadedFile,setUploadedFile]=useState<string|null>(null);
 const[showGuide,setShowGuide]=useState(true);
+const[showPromptGuide,setShowPromptGuide]=useState(false);
 const[menu,setMenu]=useState(false);const[panel,setPanel]=useState<"l"|"r"|null>(null);
 const[code,setCode]=useState<{title:string;text:string}|null>(null);const[grp,setGrp]=useState("");
 const[page,setPage]=useState<PageSettings>(DEFAULT_PAGE);
@@ -417,6 +418,9 @@ return(<div className="app">
   <button className="note" style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }} onClick={loadExample}>
     Try an example
   </button>
+  <button className="note" style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }} onClick={() => setShowPromptGuide(true)}>
+    How to write a great prompt
+  </button>
 </div>
 <button className="pri wide" onClick={gen} disabled={busy}>{busy?"Generating…":"Generate flowchart"}</button>
 
@@ -526,6 +530,66 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
 <p className="note">Click a step or connector to edit it. Drag from a handle to connect. Delete removes the selection.</p></>}
 </aside>
 {code&&<Modal title={code.title} text={code.text} onClose={()=>setCode(null)}/>}
+
+{showPromptGuide && (
+  <div className="scrim" onClick={() => setShowPromptGuide(false)} style={{ zIndex: 100 }}>
+    <div className="modal" style={{ maxWidth: 650 }} onClick={e => e.stopPropagation()}>
+      <h2 style={{ fontSize: 24, marginBottom: 8 }}>How to write a perfect prompt</h2>
+      <p style={{ color: "var(--graphite)", fontSize: 15, marginBottom: 24 }}>
+        The AI is only as good as the text you give it. To get a thesis-ready diagram, include these 4 elements in your text:
+      </p>
+      
+      <div style={{ display: "grid", gap: 20 }}>
+        <div>
+          <h3 style={{ fontSize: 16, fontFamily: "var(--sans)", marginBottom: 4 }}>1. The Design & Sample</h3>
+          <p style={{ margin: 0, fontSize: 14, color: "var(--graphite)" }}>
+            Mention the exact design and sample size.<br/>
+            <em style={{ color: "var(--accent)" }}>e.g., "A cross-sectional survey of 250 students using stratified random sampling..."</em>
+          </p>
+        </div>
+        
+        <div>
+          <h3 style={{ fontSize: 16, fontFamily: "var(--sans)", marginBottom: 4 }}>2. The Instruments</h3>
+          <p style={{ margin: 0, fontSize: 14, color: "var(--graphite)" }}>
+            Specify how data was collected.<br/>
+            <em style={{ color: "var(--accent)" }}>e.g., "...using a validated 40-item online questionnaire."</em>
+          </p>
+        </div>
+
+        <div>
+          <h3 style={{ fontSize: 16, fontFamily: "var(--sans)", marginBottom: 4 }}>3. The Analysis</h3>
+          <p style={{ margin: 0, fontSize: 14, color: "var(--graphite)" }}>
+            Name the statistical tests or qualitative methods.<br/>
+            <em style={{ color: "var(--accent)" }}>e.g., "...analyzed using hierarchical multiple regression in SPSS."</em>
+          </p>
+        </div>
+
+        <div>
+          <h3 style={{ fontSize: 16, fontFamily: "var(--sans)", marginBottom: 4 }}>4. Decision Gates (If applicable)</h3>
+          <p style={{ margin: 0, fontSize: 14, color: "var(--graphite)" }}>
+            Mention any checks, validity tests, or "if/then" scenarios.<br/>
+            <em style={{ color: "var(--accent)" }}>e.g., "If the reliability alpha was below 0.7, the questionnaire was revised."</em>
+          </p>
+        </div>
+      </div>
+
+      <div style={{ background: "var(--wash)", padding: 16, borderRadius: "var(--r)", marginTop: 24 }}>
+        <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+          Pro Tip: Use the PDF Upload
+        </p>
+        <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--graphite)" }}>
+          If you already have a written methodology chapter, just click <strong>"Or upload a PDF / DOCX"</strong> below. The AI will automatically extract the methodology and build the flowchart for you.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+        <Link href="/guide" target="_blank" className="note" style={{ textDecoration: "underline", alignSelf: "center" }}>Read the full guide →</Link>
+        <button className="pri" onClick={() => setShowPromptGuide(false)} style={{ marginLeft: "auto" }}>Got it</button>
+      </div>
+    </div>
+  </div>
+)}
+
 <UpgradeModal />
 </div>)}
 
