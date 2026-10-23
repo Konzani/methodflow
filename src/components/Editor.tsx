@@ -501,7 +501,12 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
 <h2>Diagram Style</h2>
 <label className="f">Palette<select value={ir.meta.paletteId??"mono"} onChange={e=>s.setPalette(e.target.value as PaletteId)}>{PALETTE_LIST.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
 <label className="f">Density<select value={ir.meta.density??"balanced"} onChange={e=>s.setDensity(e.target.value as Density)}>{DENSITIES.map(d=><option key={d} value={d}>{DL[d]}</option>)}</select></label>
-<label className="f">Flow<select value="tb" disabled style={{ opacity: 0.7 }}><option value="tb">Top to bottom</option></select></label>
+<label className="f">Flow
+  <select value={ir.meta.flowDirection??"auto"} onChange={e=>s.setFlowDirection(e.target.value as FlowDirection)}>
+    <option value="tb">Top to bottom</option>
+    <option value="lr">Left to right</option>
+  </select>
+</label>
 
 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
 <label className="f">Page<select value={page.size} onChange={e=>setPage({...page,size:e.target.value as PageSettings["size"]})}><option value="a4">A4</option><option value="a5">A5</option><option value="a3">A3</option><option value="letter">Letter</option><option value="legal">Legal</option></select></label>
