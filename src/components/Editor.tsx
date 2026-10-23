@@ -447,7 +447,12 @@ return(<div className="app">
   </p>
 </div>
 
-<h2 style={{marginTop:16}}>Refine with AI</h2>
+<div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 16 }}>
+  <h2 style={{ margin: 0 }}>Refine with AI</h2>
+  <button className="note" style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }} onClick={() => setShowPromptGuide(true)}>
+    Guide
+  </button>
+</div>
 <label className="f">Instruction
   <input value={refineText} maxLength={500} onChange={e=>setRefineText(e.target.value)} placeholder="e.g., Add a decision gate for missing data"/>
 </label>
@@ -569,6 +574,16 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
           <p style={{ margin: 0, fontSize: 14, color: "var(--graphite)" }}>
             Mention any checks, validity tests, or "if/then" scenarios.<br/>
             <em style={{ color: "var(--accent)" }}>e.g., "If the reliability alpha was below 0.7, the questionnaire was revised."</em>
+          </p>
+        </div>
+
+        <div>
+          <h3 style={{ fontSize: 16, fontFamily: "var(--sans)", marginBottom: 4 }}>5. Refining with AI (Surgical Edits)</h3>
+          <p style={{ margin: 0, fontSize: 14, color: "var(--graphite)" }}>
+            The <strong>Refine with AI</strong> box is for making specific, surgical changes to a diagram you've already generated. Don't ask it to "make it better"—be precise about the node you want to change.
+            <br/><em style={{ color: "var(--accent)" }}>e.g., "Combine the data collection and analysis steps into one node."</em>
+            <br/><em style={{ color: "var(--accent)" }}>e.g., "Add a decision gate for missing data after the sampling step."</em>
+            <br/><em style={{ color: "var(--accent)" }}>e.g., "Change the start terminator to say 'Project Initiation'."</em>
           </p>
         </div>
       </div>
