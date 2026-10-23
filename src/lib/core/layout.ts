@@ -1,24 +1,3 @@
-/**
- * MethodFlow layout engine - group-banded, orthogonal, deterministic.
- *
- * Why the old output needed manual fixing: nodes were ranked globally and each group box was
- * drawn as the bounding box of its members, so boxes interleaved and overlapped, and loop
- * lines were routed straight across group headers.
- *
- * This engine builds the diagram the way a person would draw it:
- *   1. Groups are stacked as horizontal BANDS in flow order, so boxes can never overlap.
- *   2. Inside a band, nodes are layered top-to-bottom (longest path). The main flow runs down
- *      one "spine" lane; a decision's retry/No branch goes to the lane on its right.
- *   3. Every edge is routed orthogonally through reserved channels:
- *        - loop-backs use gutters on the right (inside the band, or outside all bands),
- *        - edges that skip a row use a channel on the left,
- *        - decisions exit Yes at the bottom and No at the right vertex.
- *   4. All bands share one width so the result looks like a single designed figure.
- *
- * Output geometry is written onto the IR by apply() at the bottom of this file. If your
- * renderer expects different field names or a centre origin, change ONLY that function.
- */
-
 export type P = { x: number; y: number };
 export type LabelPos = P & { anchor: "start" | "middle" | "end" };
 type Box = { x: number; y: number; w: number; h: number };
@@ -26,7 +5,7 @@ type Box = { x: number; y: number; w: number; h: number };
 type INode = { id: string; label: string; shape: string; groupId?: string };
 type IEdge = { id: string; source: string; target: string; label?: string };
 type IGroup = { id: string; label: string };
-export type IRLike = { nodes: INode[]; edges: IEdge[]; groups: IGroup[]; meta?: { density?: string } };
+export type IRLike = { nodes: INode[]; edges: IEdge[]; groups: IGroup[]; meta?: { density?: string; flowDirection?: string } };
 
 type Geo = {
   nodes: Map<string, Box>;
@@ -38,9 +17,9 @@ type Geo = {
   height: number;
 };
 
-const HEADER = 28; // group header band
+const HEADER = 28;
 const MARGIN = 24;
-const CHAR = 6.9; // average glyph width at 12-13px sans
+const CHAR = 6.9;
 const LINE = 16;
 
 const METRICS = {
@@ -48,8 +27,6 @@ const METRICS = {
   balanced: { vgap: 44, colGap: 68, pad: 20, groupGap: 30 },
   compact: { vgap: 34, colGap: 60, pad: 18, groupGap: 24 },
 } as const;
-
-/* ---------------------------------------------------------------- sizing */
 
 function wrapLines(label: string, maxChars: number): string[] {
   const lines: string[] = [];
@@ -64,33 +41,38 @@ function wrapLines(label: string, maxChars: number): string[] {
   return lines.length ? lines : [""];
 }
 
-function sizeOf(n: INode): { w: number; h: number } {
+function sizeOf(n: INode, isLR: boolean): { w: number; h: number } {
   const label = n.label ?? "";
+  let w = 190, h = 54;
+
   if (n.shape === "decision") {
-    const lines = wrapLines(label, 16);
+    const lines = wrapLines(label, isLR ? 24 : 16);
     const textW = Math.max(...lines.map((l) => l.length)) * CHAR;
     const textH = lines.length * LINE;
-    const h = Math.max(84, textH * 2 + 24);
-    const k = 1 - textH / h; // usable fraction of the diamond's width at the text's edge
-    return { w: Math.max(190, Math.ceil((textW + 12) / k / 10) * 10), h };
-  }
-  if (n.shape === "terminator") {
-    const lines = wrapLines(label, 26);
+    h = Math.max(84, textH * 2 + 24);
+    const k = 1 - textH / h;
+    w = Math.max(190, Math.ceil((textW + 12) / k / 10) * 10);
+  } else if (n.shape === "terminator") {
+    const lines = wrapLines(label, isLR ? 30 : 26);
     const textW = Math.max(...lines.map((l) => l.length)) * CHAR;
-    return { w: Math.max(170, Math.ceil(textW + 48)), h: Math.max(46, lines.length * LINE + 24) };
+    w = Math.max(170, Math.ceil(textW + 48));
+    h = Math.max(46, lines.length * LINE + 24);
+  } else {
+    const lines = wrapLines(label, isLR ? 30 : 24);
+    const extra = n.shape === "document" ? 8 : n.shape === "database" ? 12 : 0;
+    w = isLR ? Math.max(220, Math.max(...lines.map((l) => l.length)) * CHAR + 40) : 190;
+    h = Math.max(54, lines.length * LINE + 22) + extra;
   }
-  const lines = wrapLines(label, 24);
-  const extra = n.shape === "document" ? 8 : n.shape === "database" ? 12 : 0;
-  return { w: 190, h: Math.max(54, lines.length * LINE + 22) + extra };
+  
+  return isLR ? { w: h, h: w } : { w, h };
 }
-
-/* --------------------------------------------------------------- compute */
 
 const NEG = /^(no|fail\w*|exclu\w*|reject\w*|den\w*|not\b|inelig\w*|below|unmet|invalid|retry|insufficient)/i;
 const NONE = "__none";
 
 function compute(ir: IRLike): Geo {
   const M = METRICS[(ir.meta?.density as keyof typeof METRICS) ?? "balanced"] ?? METRICS.balanced;
+  const isLR = ir.meta?.flowDirection === "lr";
   const nodes = ir.nodes;
   const idx = new Map(nodes.map((n, i) => [n.id, i]));
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
@@ -98,16 +80,9 @@ function compute(ir: IRLike): Geo {
 
   const out = new Map<string, IEdge[]>();
   const inn = new Map<string, IEdge[]>();
-  for (const n of nodes) {
-    out.set(n.id, []);
-    inn.set(n.id, []);
-  }
-  for (const e of edges) {
-    out.get(e.source)!.push(e);
-    inn.get(e.target)!.push(e);
-  }
+  for (const n of nodes) { out.set(n.id, []); inn.set(n.id, []); }
+  for (const e of edges) { out.get(e.source)!.push(e); inn.get(e.target)!.push(e); }
 
-  /* 1. loop-back edges = DFS back edges (independent of labels, so any loop is handled) */
   const back = new Set<string>();
   const state = new Map<string, number>();
   const visit = (id: string) => {
@@ -121,14 +96,13 @@ function compute(ir: IRLike): Geo {
   };
   for (const n of nodes.filter((n) => !inn.get(n.id)!.length).concat(nodes)) if (!state.get(n.id)) visit(n.id);
 
-  /* 2. global depth + topological order over the remaining DAG */
   const indeg = new Map<string, number>(nodes.map((n) => [n.id, 0]));
   for (const e of edges) if (!back.has(e.id)) indeg.set(e.target, indeg.get(e.target)! + 1);
   const depth = new Map<string, number>(nodes.map((n) => [n.id, 0]));
   const order: string[] = [];
   const q = nodes.filter((n) => indeg.get(n.id) === 0).map((n) => n.id);
   while (q.length) {
-    q.sort((a, b) => idx.get(a)! - idx.get(b)!); // stable: keep the authored order among ready nodes
+    q.sort((a, b) => idx.get(a)! - idx.get(b)!);
     const id = q.shift()!;
     order.push(id);
     for (const e of out.get(id)!) {
@@ -141,7 +115,6 @@ function compute(ir: IRLike): Geo {
   for (const n of nodes) if (!order.includes(n.id)) order.push(n.id);
   const rank = new Map(order.map((id, i) => [id, i]));
 
-  /* 3. groups become bands, ordered by where they first appear in the flow */
   const gdefs = new Map(ir.groups.map((g, i) => [g.id, { g, i }]));
   const gidOf = (n: INode) => (n.groupId && gdefs.has(n.groupId) ? n.groupId : NONE);
   const members = new Map<string, INode[]>();
@@ -156,10 +129,8 @@ function compute(ir: IRLike): Geo {
   );
   const gi = new Map<string, number>();
   gorder.forEach((k, i) => members.get(k)!.forEach((n) => gi.set(n.id, i)));
-  // an edge that would run UP into an earlier band is treated as a loop-back too
   for (const e of edges) if (!back.has(e.id) && gi.get(e.target)! < gi.get(e.source)!) back.add(e.id);
 
-  /* 4. which branch of a split is the main flow, which is the side (retry / exclusion) branch */
   const fwdOut = (id: string) => out.get(id)!.filter((e) => !back.has(e.id));
   const hasBackOut = (id: string) => out.get(id)!.some((e) => back.has(e.id));
   const side = new Set<string>();
@@ -177,7 +148,6 @@ function compute(ir: IRLike): Geo {
   }
   const rankOf = (e: IEdge) => ordered.get(e.source)!.indexOf(e);
 
-  /* 5. layers (rows) and lanes (columns) inside each band */
   const layer = new Map<string, number>();
   const lane = new Map<string, number>();
   const occ = new Set<string>();
@@ -197,8 +167,7 @@ function compute(ir: IRLike): Geo {
   const dense = new Map(used.map((l, i) => [l, i]));
   for (const [id, l] of [...lane]) lane.set(id, dense.get(l)!);
 
-  /* 6. lane geometry: the spine (lane 0) sits at x = 0 */
-  const size = new Map(nodes.map((n) => [n.id, sizeOf(n)]));
+  const size = new Map(nodes.map((n) => [n.id, sizeOf(n, isLR)]));
   const nLanes = Math.max(1, used.length);
   const laneW: number[] = Array(nLanes).fill(0);
   for (const n of nodes) laneW[lane.get(n.id)!] = Math.max(laneW[lane.get(n.id)!], size.get(n.id)!.w);
@@ -207,7 +176,6 @@ function compute(ir: IRLike): Geo {
   const minX = -laneW[0] / 2;
   const maxX = laneX[nLanes - 1] + laneW[nLanes - 1] / 2;
 
-  /* 7. reserve channels */
   const skip: IEdge[][] = gorder.map(() => []);
   const backIn: IEdge[][] = gorder.map(() => []);
   const backOut: IEdge[] = [];
@@ -228,9 +196,8 @@ function compute(ir: IRLike): Geo {
   const chIdx = new Map<string, number>();
   const assign = (list: IEdge[]) =>
     [...list].sort((a, b) => span(a) - span(b) || idx.get(a.id as never)! - idx.get(b.id as never)!).forEach((e, k) => chIdx.set(e.id, k));
-  skip.forEach(assign);
-  backIn.forEach(assign);
-  assign(backOut);
+  skip.forEach(assign); backIn.forEach(assign); assign(backOut);
+  
   const LC = Math.max(0, ...skip.map((l) => l.length));
   const BC = Math.max(0, ...backIn.map((l) => l.length));
   const GB = backOut.length;
@@ -241,7 +208,6 @@ function compute(ir: IRLike): Geo {
   const gOut = (k: number) => boxR + 22 + 14 * k;
   const canvasR = boxR + (GB ? 22 + 14 * (GB - 1) + 14 : 0);
 
-  /* 8. place bands and nodes */
   const nodeBox = new Map<string, Box>();
   const groupBox = new Map<string, Box>();
   const nodeGroup = new Map<string, string>();
@@ -270,17 +236,12 @@ function compute(ir: IRLike): Geo {
   });
   const totalH = cursor - M.groupGap;
 
-  /* 9. route edges */
-  const nb = (id: string) => {
-    const b = nodeBox.get(id)!;
-    return { ...b, cx: b.x + b.w / 2, cy: b.y + b.h / 2 };
-  };
+  const nb = (id: string) => { const b = nodeBox.get(id)!; return { ...b, cx: b.x + b.w / 2, cy: b.y + b.h / 2 }; };
   type NB = ReturnType<typeof nb>;
   const top = (b: NB): P => ({ x: b.cx, y: b.y });
   const bottom = (b: NB): P => ({ x: b.cx, y: b.y + b.h });
   const left = (b: NB): P => ({ x: b.x, y: b.cy });
   const right = (b: NB): P => ({ x: b.x + b.w, y: b.cy });
-  // y of the horizontal run that enters a node from above: inside the band's padding for first rows
   const entryY = (id: string) => {
     const G = gi.get(id)!;
     const L = layer.get(id)!;
@@ -288,10 +249,8 @@ function compute(ir: IRLike): Geo {
   };
 
   const routeFwd = (e: IEdge): P[] => {
-    const s = nb(e.source);
-    const t = nb(e.target);
-    const sl = lane.get(e.source)!;
-    const tl = lane.get(e.target)!;
+    const s = nb(e.source); const t = nb(e.target);
+    const sl = lane.get(e.source)!; const tl = lane.get(e.target)!;
     const same = gi.get(e.source) === gi.get(e.target);
     const my = entryY(e.target);
     if (side.has(e.id)) {
@@ -316,8 +275,7 @@ function compute(ir: IRLike): Geo {
   };
 
   const routeBack = (e: IEdge): P[] => {
-    const s = nb(e.source);
-    const t = nb(e.target);
+    const s = nb(e.source); const t = nb(e.target);
     const global = gi.get(e.source) !== gi.get(e.target);
     const k = chIdx.get(e.id) ?? 0;
     const gx = global ? gOut(k) : gIn(k);
@@ -344,11 +302,11 @@ function compute(ir: IRLike): Geo {
     ends.set(e.id, [e.source, e.target]);
   }
 
-  /* 10. translate into positive canvas coordinates */
   const dx = MARGIN - boxL;
   const dy = MARGIN;
   const mv = (b: Box): Box => ({ ...b, x: b.x + dx, y: b.y + dy });
   const mp = (p: P): P => ({ x: p.x + dx, y: p.y + dy });
+  
   return {
     nodes: new Map([...nodeBox].map(([k, b]) => [k, mv(b)])),
     groups: new Map([...groupBox].map(([k, b]) => [k, mv(b)])),
@@ -361,8 +319,6 @@ function compute(ir: IRLike): Geo {
     height: totalH + 2 * MARGIN,
   };
 }
-
-/* ------------------------------------------------------------ verification */
 
 const hits = (a: Box, b: Box, m = 0) => a.x < b.x + b.w + m && b.x < a.x + a.w + m && a.y < b.y + b.h + m && b.y < a.y + a.h + m;
 
@@ -395,37 +351,46 @@ function check(geo: Geo): string[] {
   return issues;
 }
 
-/** Dev / CI helper: returns a list of layout defects (empty = clean). */
 export function layoutProblems(ir: IRLike): string[] {
-  return ir.nodes.length ? check(compute(ir)) : [];
+  if (!ir.nodes.length) return [];
+  const g = compute(ir);
+  const isLR = ir.meta?.flowDirection === "lr";
+  if (isLR) {
+    const newNodes = new Map([...g.nodes].map(([k, b]) => [k, { ...b, x: b.y, y: b.x, w: b.h, h: b.w }]));
+    const newGroups = new Map([...g.groups].map(([k, b]) => [k, { ...b, x: b.y, y: b.x, w: b.h, h: b.w }]));
+    const newEdges = new Map([...g.edges].map(([k, v]) => [k, { points: v.points.map(p => ({ x: p.y, y: p.x })), label: v.label ? { x: v.label.y, y: v.label.x, anchor: v.label.anchor } : undefined }]));
+    return check({ ...g, nodes: newNodes, groups: newGroups, edges: newEdges, width: g.height, height: g.width });
+  }
+  return check(g);
 }
 
-/* ------------------------------------------------------------------- apply */
-
-/**
- * The ONLY renderer-specific part. Coordinates are top-left origin, in px, positive.
- *   node  : x, y, w, h
- *   group : x, y, w, h                (the band box; header label sits at its top-left)
- *   edge  : points[] (orthogonal polyline, source port -> target port), labelPos {x,y,anchor}
- *   canvas: { width, height }         (crop/fit the export to this)
- */
 export function layout<T extends IRLike>(ir: T): T {
   if (!ir.nodes.length) return ir;
   const g = compute(ir);
+  const isLR = ir.meta?.flowDirection === "lr";
+  
   return {
     ...ir,
     nodes: ir.nodes.map((n) => {
       const b = g.nodes.get(n.id);
-      return b ? { ...n, x: b.x, y: b.y, w: b.w, h: b.h } : n;
+      if (!b) return n;
+      return isLR ? { ...n, x: b.y, y: b.x, w: b.h, h: b.w } : { ...n, x: b.x, y: b.y, w: b.w, h: b.h };
     }),
     groups: ir.groups.map((gr) => {
       const b = g.groups.get(gr.id);
-      return b ? { ...gr, x: b.x, y: b.y, w: b.w, h: b.h } : gr;
+      if (!b) return gr;
+      return isLR ? { ...gr, x: b.y, y: b.x, w: b.h, h: b.w } : { ...gr, x: b.x, y: b.y, w: b.w, h: b.h };
     }),
     edges: ir.edges.map((e) => {
       const r = g.edges.get(e.id);
-      return r ? { ...e, points: r.points, labelPos: r.label } : e;
+      if (!r) return e;
+      if (isLR) {
+        const pts = r.points.map(p => ({ x: p.y, y: p.x }));
+        const lab = r.label ? { x: r.label.y, y: r.label.x, anchor: r.label.anchor } : undefined;
+        return { ...e, points: pts, labelPos: lab };
+      }
+      return { ...e, points: r.points, labelPos: r.label };
     }),
-    canvas: { width: g.width, height: g.height },
+    canvas: { width: isLR ? g.height : g.width, height: isLR ? g.width : g.height },
   } as T;
 }
