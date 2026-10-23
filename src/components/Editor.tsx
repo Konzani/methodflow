@@ -24,7 +24,6 @@ type D={label:string;shape:Shape;fill?:string;stroke?:string;text?:string;w?:num
 const ML:Record<Method,string>={quantitative:"Quantitative",qualitative:"Qualitative",mixed:"Mixed methods",prisma:"Systematic review (PRISMA)",consort:"Randomised trial (CONSORT)",dsr:"Design science",survey:"Survey",experimental:"Experimental",custom:"Other"};
 const SL:Record<Shape,string>={process:"Step",decision:"Decision",terminator:"Start / end",data:"Data",document:"Document",database:"Database"};
 const DL:Record<Density,string>={compact:"Compact",balanced:"Balanced",spacious:"Spacious"};
-const FL:Record<FlowDirection,string>={auto:"Auto",tb:"Top to bottom",lr:"Left to right"};
 
 function MFNode({data,selected}:NodeProps<Node<D>>){
   const w = data.w || 200;
@@ -502,7 +501,7 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
 <h2>Diagram Style</h2>
 <label className="f">Palette<select value={ir.meta.paletteId??"mono"} onChange={e=>s.setPalette(e.target.value as PaletteId)}>{PALETTE_LIST.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
 <label className="f">Density<select value={ir.meta.density??"balanced"} onChange={e=>s.setDensity(e.target.value as Density)}>{DENSITIES.map(d=><option key={d} value={d}>{DL[d]}</option>)}</select></label>
-<label className="f">Flow<select value={ir.meta.flowDirection??"auto"} onChange={e=>s.setFlowDirection(e.target.value as FlowDirection)}>{(Object.keys(FL) as FlowDirection[]).map(f=><option key={f} value={f}>{FL[f]}</option>)}</select></label>
+<label className="f">Flow<select value="tb" disabled style={{ opacity: 0.7 }}><option value="tb">Top to bottom</option></select></label>
 
 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
 <label className="f">Page<select value={page.size} onChange={e=>setPage({...page,size:e.target.value as PageSettings["size"]})}><option value="a4">A4</option><option value="a5">A5</option><option value="a3">A3</option><option value="letter">Letter</option><option value="legal">Legal</option></select></label>
