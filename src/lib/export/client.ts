@@ -78,18 +78,39 @@ export async function toPng(ir: IR, page: PageSettings, watermark = false) {
 export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
   const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
   const fit = computeFit(w, h, page);
-  const png = await svgToPngBlob(svg, fit.pxW, fit.pxH);
+  
   const { jsPDF } = await import("jspdf");
+  const { svg2pdf } = await import("svg2pdf.js");
+  
   const dims = pageSizeMM(page);
   const doc = new jsPDF({
     orientation: page.orientation,
     unit: "mm",
     format: [dims.w, dims.h],
   });
+
+  const container = document.createElement("div");
+  container.style.position = "absolute";
+  container.style.left = "-9999px";
+  container.innerHTML = svg;
+  document.body.appendChild(container);
+
+  const svgElement = container.querySelector("svg");
+  if (!svgElement) {
+    document.body.removeChild(container);
+    throw new Error("SVG element not found");
+  }
+
   const x = (dims.w - fit.mmW) / 2;
-  const y = (dims.h - fit.mmH) / 2 - 4; 
-  doc.addImage(await dataUrl(png), "PNG", x, y, fit.mmW, fit.mmH);
-  
+  const y = (dims.h - fit.mmH) / 2 - 4;
+
+  await svg2pdf(svgElement, doc, {
+    x: x,
+    y: y,
+    width: fit.mmW,
+    height: fit.mmH,
+  });
+
   const caption = ir.meta.caption || ir.meta.title;
   if (caption) {
     doc.setFontSize(10);
@@ -98,6 +119,9 @@ export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
       maxWidth: dims.w - 2 * page.margin,
     });
   }
+
+  document.body.removeChild(container);
+  
   return doc.output("blob");
 }
 

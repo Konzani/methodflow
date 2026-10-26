@@ -366,9 +366,27 @@ export function layoutProblems(ir: IRLike): string[] {
 
 export function layout<T extends IRLike>(ir: T): T {
   if (!ir.nodes.length) return ir;
-  const g = compute(ir);
-  const isLR = ir.meta?.flowDirection === "lr";
   
+  const direction = ir.meta?.flowDirection ?? "auto";
+  
+  if (direction === "auto") {
+    const tbResult = compute({ ...ir, meta: { ...ir.meta, flowDirection: "tb" } });
+    const ratio = tbResult.height / tbResult.width;
+    
+    if (ratio > 1.4) {
+      const lrResult = compute({ ...ir, meta: { ...ir.meta, flowDirection: "lr" } });
+      return applyGeometry(ir, lrResult, true);
+    } else {
+      return applyGeometry(ir, tbResult, false);
+    }
+  }
+
+  const isLR = direction === "lr";
+  const g = compute(ir);
+  return applyGeometry(ir, g, isLR);
+}
+
+function applyGeometry<T extends IRLike>(ir: T, g: Geo, isLR: boolean): T {
   return {
     ...ir,
     nodes: ir.nodes.map((n) => {
