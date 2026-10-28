@@ -65,8 +65,8 @@ export const emptyIR = (): IR => ({
     title: "Untitled flowchart",
     methodology: "custom",
     paletteId: "mono",
-    density: "balanced",
-    flowDirection: "tb", // Default changed to Top-to-Bottom
+    density: "spacious", // Default changed to Spacious
+    flowDirection: "tb",
   },
   groups: [],
   nodes: [{ id: "n1", label: "Start", shape: "terminator" }],

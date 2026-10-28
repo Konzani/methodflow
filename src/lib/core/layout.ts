@@ -28,14 +28,23 @@ const METRICS = {
   compact: { vgap: 34, colGap: 60, pad: 18, groupGap: 24 },
 } as const;
 
+// FIXED: Forcefully break long words so they don't create massive nodes
 function wrapLines(label: string, maxChars: number): string[] {
   const lines: string[] = [];
   let cur = "";
   for (const w of label.trim().split(/\s+/)) {
-    if (cur && (cur + " " + w).length > maxChars) {
+    let word = w;
+    while (word.length > maxChars) {
+      if (cur) { lines.push(cur); cur = ""; }
+      lines.push(word.slice(0, maxChars));
+      word = word.slice(maxChars);
+    }
+    if (cur && (cur + " " + word).length > maxChars) {
       lines.push(cur);
-      cur = w;
-    } else cur = cur ? cur + " " + w : w;
+      cur = word;
+    } else {
+      cur = cur ? cur + " " + word : word;
+    }
   }
   if (cur) lines.push(cur);
   return lines.length ? lines : [""];
@@ -71,7 +80,7 @@ const NEG = /^(no|fail\w*|exclu\w*|reject\w*|den\w*|not\b|inelig\w*|below|unmet|
 const NONE = "__none";
 
 function compute(ir: IRLike): Geo {
-  const M = METRICS[(ir.meta?.density as keyof typeof METRICS) ?? "balanced"] ?? METRICS.balanced;
+  const M = METRICS[(ir.meta?.density as keyof typeof METRICS) ?? "spacious"] ?? METRICS.spacious;
   const isLR = ir.meta?.flowDirection === "lr";
   const nodes = ir.nodes;
   const idx = new Map(nodes.map((n, i) => [n.id, i]));
@@ -367,7 +376,6 @@ export function layoutProblems(ir: IRLike): string[] {
 export function layout<T extends IRLike>(ir: T): T {
   if (!ir.nodes.length) return ir;
   
-  // Changed fallback from "auto" to "tb"
   const direction = ir.meta?.flowDirection ?? "tb"; 
   
   if (direction === "auto") {
