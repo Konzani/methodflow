@@ -22,30 +22,18 @@ export function Header() {
 export function Footer() {
   return (
     <footer className="site-f">
-      <div className="wrap" style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "24px" }}>
-        
-        {/* Left side: Copyright */}
+      <div className="wrap">
         <span>
           {SITE.name} by <a href={SITE.parentUrl}>{SITE.parent}</a>
         </span>
-
-        {/* Right side: Organized Links */}
-        <div style={{ display: "flex", gap: "24px", flexWrap: "wrap" }}>
-          <span style={{ display: "flex", gap: "12px" }}>
-            <Link href="/templates">Templates</Link>
-            <Link href="/guide">Guide</Link>
-          </span>
-          <span style={{ display: "flex", gap: "12px", borderLeft: "1px solid var(--line)", paddingLeft: "24px" }}>
-            <Link href="/terms">Terms</Link>
-            <Link href="/privacy">Privacy</Link>
-            <Link href="/refunds">Refunds</Link>
-            <Link href="/cookies">Cookies</Link>
-          </span>
-          <span>
-            <a href={`mailto:${SITE.email}`}>Contact</a>
-          </span>
-        </div>
-
+        <span>
+          <Link href="/templates">Templates</Link> ·{" "}
+          <Link href="/terms">Terms</Link> ·{" "}
+          <Link href="/privacy">Privacy</Link> ·{" "}
+          <Link href="/refund">Refunds</Link> ·{" "}
+          <Link href="/cookies">Cookies</Link> ·{" "}
+          <Link href="/contact">Contact</Link>
+        </span>
       </div>
     </footer>
   );
