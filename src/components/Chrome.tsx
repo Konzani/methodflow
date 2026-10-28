@@ -10,6 +10,7 @@ export function Header() {
         </Link>
         <nav className="nav" aria-label="Main">
           <Link href="/templates">Templates</Link>
+          <Link href="/guide">Guide</Link>
           <Link href="/pricing">Pricing</Link>
           <Link href="/app">Open editor</Link>
         </nav>
@@ -25,9 +26,13 @@ export function Footer() {
         <span>
           {SITE.name} by <a href={SITE.parentUrl}>{SITE.parent}</a>
         </span>
-        <span>
-          <Link href="/templates">Templates</Link> ·{" "}
-          <Link href="/privacy">Privacy</Link> ·{" "}
+        <span style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <Link href="/templates">Templates</Link>
+          <Link href="/guide">Guide</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/terms">Terms</Link>
+          <Link href="/refund">Refunds</Link>
+          <Link href="/cookies">Cookies</Link>
           <Link href="/contact">Contact</Link>
         </span>
       </div>
