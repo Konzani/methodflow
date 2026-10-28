@@ -511,10 +511,10 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
 <label className="f">Palette<select value={ir.meta.paletteId??"mono"} onChange={e=>s.setPalette(e.target.value as PaletteId)}>{PALETTE_LIST.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
 <label className="f">Density<select value={ir.meta.density??"balanced"} onChange={e=>s.setDensity(e.target.value as Density)}>{DENSITIES.map(d=><option key={d} value={d}>{DL[d]}</option>)}</select></label>
 <label className="f">Flow
-  <select value={ir.meta.flowDirection ?? "auto"} onChange={e=>s.setFlowDirection(e.target.value as FlowDirection)}>
-    <option value="auto">Auto-fit (Recommended)</option>
-    <option value="tb">Top to bottom</option>
+  <select value={ir.meta.flowDirection ?? "tb"} onChange={e=>s.setFlowDirection(e.target.value as FlowDirection)}>
+    <option value="tb">Top to bottom (Default)</option>
     <option value="lr">Left to right</option>
+    <option value="auto">Auto-fit (Landscape)</option>
   </select>
 </label>
 

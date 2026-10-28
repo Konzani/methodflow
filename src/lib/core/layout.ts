@@ -367,7 +367,8 @@ export function layoutProblems(ir: IRLike): string[] {
 export function layout<T extends IRLike>(ir: T): T {
   if (!ir.nodes.length) return ir;
   
-  const direction = ir.meta?.flowDirection ?? "auto";
+  // Changed fallback from "auto" to "tb"
+  const direction = ir.meta?.flowDirection ?? "tb"; 
   
   if (direction === "auto") {
     const tbResult = compute({ ...ir, meta: { ...ir.meta, flowDirection: "tb" } });

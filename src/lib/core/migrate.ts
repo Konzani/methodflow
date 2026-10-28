@@ -13,7 +13,7 @@ export function migrate(raw: unknown): IR | null {
       ...ir.meta,
       paletteId: ir.meta?.paletteId ?? DEFAULT_PALETTE_ID,
       density: ir.meta?.density ?? "balanced",
-      flowDirection: ir.meta?.flowDirection ?? "auto",
+      flowDirection: ir.meta?.flowDirection ?? "tb", // Default changed to Top-to-Bottom
     },
   } as IR;
 }

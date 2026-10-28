@@ -66,7 +66,7 @@ export const emptyIR = (): IR => ({
     methodology: "custom",
     paletteId: "mono",
     density: "balanced",
-    flowDirection: "auto",
+    flowDirection: "tb", // Default changed to Top-to-Bottom
   },
   groups: [],
   nodes: [{ id: "n1", label: "Start", shape: "terminator" }],
