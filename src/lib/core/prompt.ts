@@ -80,11 +80,25 @@ SPECIFICITY (this is what makes the diagram useful instead of generic):
 - If the text names a design (cross-sectional, grounded theory, quasi-experimental, explanatory sequential, ...), the whole flow must follow that design's real logic, not a generic template.
 - Numbers the user gave (sample size, items, groups) go in brackets in the label of the step they belong to. Never invent any.
 - CRITICAL: If the text mentions specific datasets (e.g., Landsat 8, Census data), software (e.g., ArcGIS, SPSS, NVivo), or specific databases (e.g., Scopus, PubMed), you MUST include them in the label of the relevant step. E.g., "Extract Landsat 8 imagery" or "Run multiple regression (SPSS)". Do NOT create standalone nodes for tools.
-- CRITICAL - PARALLEL BRANCHES: If the text describes multiple parallel groups, arms, or cohorts (e.g., "Arm A, Arm B, and Arm C" or "Group 1 and Group 2"), you MUST create separate parallel nodes for each group. Never combine them into one node. For example, after a "Randomise participants" node, create three separate edges pointing to "Arm A (Lecture)", "Arm B (Flipped)", and "Arm C (Online)". The layout engine will automatically place them side-by-side in a tree structure.
 - Aim for 8 to 14 nodes. Do not create a node for every single sentence; group minor steps together (e.g., "Clean and code data"). Keep the diagram compact so it fits on a single page.
 - Prefer precise verbs (Recruit, Screen, Pilot, Code, Triangulate, Calibrate, Randomise) over vague ones (Handle, Process, Do, Perform).
 - Where the user's text and the standard convention disagree, the text wins.
 - Do not pad. A short description gets a shorter diagram built from the standard stages, not filler.
+
+CRITICAL - PARALLEL BRANCHES (TREE STRUCTURE):
+- If the text describes multiple parallel groups, arms, or datasets (e.g., "Arm A, Arm B, and Arm C" or "Transcriptomics, Proteomics, Metabolomics"), you MUST create a fan-out structure in the JSON. 
+- Do NOT chain them linearly (e.g., Arm A -> Arm B -> Arm C).
+- Instead, connect the preceding node (e.g., "Randomise" or "Acquire data") directly to ALL three parallel nodes. 
+- Example JSON structure for a 1-to-3 split:
+  "edges": [
+    {"id": "e1", "source": "n1", "target": "n2"}, // n1 is the root
+    {"id": "e2", "source": "n1", "target": "n3"}, // n2, n3, n4 are parallel
+    {"id": "e3", "source": "n1", "target": "n4"},
+    {"id": "e4", "source": "n2", "target": "n5"}, // n5 is the merge point
+    {"id": "e5", "source": "n3", "target": "n5"},
+    {"id": "e6", "source": "n4", "target": "n5"}
+  ]
+- This fan-out/fan-in logic is mandatory for tree-branching designs. Ensure the parallel nodes are listed consecutively in the nodes array.
 
 CRITICAL - DECISION NODES:
 - A decision is any check, gate, approval, eligibility, inclusion/exclusion, screening, or validation. Represent it as a diamond (shape "decision").
