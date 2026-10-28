@@ -1,11 +1,7 @@
 import type { Metadata } from "next";
 import { Header, Footer } from "@/components/Chrome";
-import { SITE } from "@/lib/site";
 
-export const metadata: Metadata = { 
-  title: "Cookie Policy", 
-  alternates: { canonical: "/cookies" } 
-};
+export const metadata: Metadata = { title: "Cookie Policy", alternates: { canonical: "/cookies" } };
 
 export default function Cookies() {
   return (
@@ -13,19 +9,16 @@ export default function Cookies() {
       <Header />
       <main className="wrap page">
         <h1>Cookie Policy</h1>
-        <p>Last updated: {new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</p>
+        <p>Last updated: October 2026</p>
 
-        <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>What are cookies?</h2>
-        <p>Cookies are small text files stored on your device that help websites function. {SITE.name} uses very few cookies, all designed to protect your security and improve your experience.</p>
+        <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>1. Essential Cookies</h2>
+        <p>We use strictly necessary cookies to authenticate your session and secure your account. These cookies are required for the platform to function and cannot be disabled if you wish to use the Service.</p>
 
-        <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>Strictly Necessary Cookies</h2>
-        <p>We use Supabase for authentication. When you log in, Supabase stores a secure session cookie on your browser. This is strictly necessary to keep you logged in and to ensure your diagrams remain private to your account. We cannot turn this off.</p>
+        <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>2. Analytics</h2>
+        <p>We collect anonymized, aggregate usage data to monitor the performance of our systems. We do not use third-party advertising cookies or track your activity across external websites.</p>
 
-        <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>Analytics</h2>
-        <p>We use privacy-friendly analytics to understand how many people visit the site. We do not use tracking cookies that follow you across the internet, nor do we sell your data to advertisers.</p>
-
-        <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>Managing Cookies</h2>
-        <p>You can block or delete cookies through your browser settings. However, if you block essential cookies, you will not be able to log in to your {SITE.name} account.</p>
+        <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>3. Your Choices</h2>
+        <p>You can manage cookie preferences through your browser settings. Blocking essential cookies will prevent you from logging in.</p>
       </main>
       <Footer />
     </>
