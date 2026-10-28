@@ -16,8 +16,6 @@ export const NodeS = z.object({
   notes: z.string().max(300).optional(),
   x: z.number().finite().optional(),
   y: z.number().finite().optional(),
-  w: z.number().finite().optional(),
-  h: z.number().finite().optional(),
   fill: hex.optional(),
   stroke: hex.optional(),
   text: hex.optional(),
@@ -35,10 +33,6 @@ export const GroupS = z.object({
   id,
   label: z.string().min(1).max(60),
   color: hex.optional(),
-  x: z.number().finite().optional(),
-  y: z.number().finite().optional(),
-  w: z.number().finite().optional(),
-  h: z.number().finite().optional(),
 });
 
 export const IRSchema = z.object({
@@ -71,8 +65,8 @@ export const emptyIR = (): IR => ({
     title: "Untitled flowchart",
     methodology: "custom",
     paletteId: "mono",
-    density: "balanced",
-    flowDirection: "auto",
+    density: "spacious",
+    flowDirection: "tb",
   },
   groups: [],
   nodes: [{ id: "n1", label: "Start", shape: "terminator" }],

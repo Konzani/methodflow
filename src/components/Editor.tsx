@@ -515,7 +515,6 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
   <select value={ir.meta.flowDirection ?? "tb"} onChange={e=>s.setFlowDirection(e.target.value as FlowDirection)}>
     <option value="tb">Top to bottom</option>
     <option value="lr">Left to right</option>
-    <option value="auto">Auto-fit (Landscape)</option>
   </select>
 </label>
 
@@ -610,4 +609,4 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
 <UpgradeModal />
 </div>)}
 
-export default function Editor(){return<ReactFlowProvider><Inner/></ReactFlowProvider>}
+export default function Editor(){return <ReactFlowProvider><Inner/></ReactFlowProvider>}

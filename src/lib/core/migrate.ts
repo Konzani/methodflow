@@ -12,7 +12,7 @@ export function migrate(raw: unknown): IR | null {
     meta: {
       ...ir.meta,
       paletteId: ir.meta?.paletteId ?? DEFAULT_PALETTE_ID,
-      density: ir.meta?.density ?? "spacious", // Default changed to Spacious
+      density: ir.meta?.density ?? "spacious",
       flowDirection: ir.meta?.flowDirection ?? "tb",
     },
   } as IR;

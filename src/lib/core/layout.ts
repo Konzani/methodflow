@@ -28,7 +28,6 @@ const METRICS = {
   compact: { vgap: 34, colGap: 60, pad: 18, groupGap: 24 },
 } as const;
 
-// FIXED: Forcefully break long words so they don't create massive nodes
 function wrapLines(label: string, maxChars: number): string[] {
   const lines: string[] = [];
   let cur = "";
@@ -376,21 +375,8 @@ export function layoutProblems(ir: IRLike): string[] {
 export function layout<T extends IRLike>(ir: T): T {
   if (!ir.nodes.length) return ir;
   
-  const direction = ir.meta?.flowDirection ?? "tb"; 
-  
-  if (direction === "auto") {
-    const tbResult = compute({ ...ir, meta: { ...ir.meta, flowDirection: "tb" } });
-    const ratio = tbResult.height / tbResult.width;
-    
-    if (ratio > 1.4) {
-      const lrResult = compute({ ...ir, meta: { ...ir.meta, flowDirection: "lr" } });
-      return applyGeometry(ir, lrResult, true);
-    } else {
-      return applyGeometry(ir, tbResult, false);
-    }
-  }
-
-  const isLR = direction === "lr";
+  // Strictly honor the flow direction, default to TB.
+  const isLR = ir.meta?.flowDirection === "lr";
   const g = compute(ir);
   return applyGeometry(ir, g, isLR);
 }
