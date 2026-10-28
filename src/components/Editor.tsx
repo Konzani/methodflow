@@ -159,6 +159,7 @@ useEffect(()=>{
 useEffect(()=>{
   setNodes(ir.nodes.map(n=>{
     const anyNode = n as any;
+    const palShape = pal.shapes[n.shape];
     return {
       id:n.id,
       type:"mf",
@@ -166,16 +167,16 @@ useEffect(()=>{
       data: {
         label: n.label,
         shape: n.shape,
-        fill: n.fill,
-        stroke: n.stroke,
-        text: n.text,
+        fill: n.fill || palShape?.fill,
+        stroke: n.stroke || palShape?.stroke,
+        text: n.text || palShape?.text,
         w: anyNode.w,
         h: anyNode.h
       },
       selected: sel?.k==="n" && sel.id===n.id
     };
   }));
-},[ir,sel,setNodes]);
+},[ir,sel,setNodes, pal]);
 
 useEffect(()=>{setEdges(ir.edges.map(e=>({id:e.id,source:e.source,target:e.target,label:e.label,type:"smoothstep",selected:sel?.k==="e"&&sel.id===e.id,style:{stroke:pal.ink,strokeWidth:1.4,strokeDasharray:e.dashed?"6 4":undefined},markerEnd:{type:MarkerType.ArrowClosed,color:pal.ink},labelStyle:{fontSize:11,fill:pal.ink},labelBgStyle:{fill:"#fff"}})))},[ir,sel,setEdges,pal.ink]);
 useEffect(()=>{const t=setTimeout(()=>rf.fitView({padding:.2,duration:200}),60);return()=>clearTimeout(t)},[rev,rf]);
