@@ -80,8 +80,10 @@ const[status,setStatus]=useState("");const[msg,setMsg]=useState("");const[busy,s
 const[method,setMethod]=useState<Method>("quantitative");const[text,setText]=useState("");const[extra,setExtra]=useState("");
 const[refineText,setRefineText]=useState("");
 const[uploadedFile,setUploadedFile]=useState<string|null>(null);
-const[showGuide,setShowGuide]=useState(true);
+const[showGuide,setShowGuide]=useState(false);
 const[showPromptGuide,setShowPromptGuide]=useState(false);
+const[showOnboarding,setShowOnboarding]=useState(false);
+const[hasClickedNode,setHasClickedNode]=useState(true);
 const[menu,setMenu]=useState(false);const[panel,setPanel]=useState<"l"|"r"|null>(null);
 const[code,setCode]=useState<{title:string;text:string}|null>(null);const[grp,setGrp]=useState("");
 const[page,setPage]=useState<PageSettings>(DEFAULT_PAGE);
@@ -126,6 +128,25 @@ const groupBoxes = useMemo(() => {
 }, [ir.groups, pal]);
 
 useEffect(() => () => { if (stageTimer.current) clearInterval(stageTimer.current); }, []);
+
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  if (!localStorage.getItem("mf:onboarded")) setShowOnboarding(true);
+  if (localStorage.getItem("mf:clicked-node")) setHasClickedNode(true);
+  else setHasClickedNode(false);
+}, []);
+
+function dismissOnboarding() {
+  setShowOnboarding(false);
+  try { localStorage.setItem("mf:onboarded", "1"); } catch {}
+}
+
+function markNodeClicked() {
+  if (!hasClickedNode) {
+    setHasClickedNode(true);
+    try { localStorage.setItem("mf:clicked-node", "1"); } catch {}
+  }
+}
 
 function startProgress(stages: { at: number; msg: string }[]) {
   if (stageTimer.current) clearInterval(stageTimer.current);
@@ -404,9 +425,21 @@ return(<div className="app">
 </header>
 
 <aside className="side left" data-open={panel==="l"}>
+{showOnboarding && (
+  <div style={{ background: "linear-gradient(135deg, #EAF0F6 0%, #F2E9F1 100%)", border: "1px solid var(--accent)", borderRadius: 8, padding: "12px 14px", marginBottom: 12, position: "relative" }}>
+    <button onClick={dismissOnboarding} aria-label="Dismiss welcome banner" style={{ position: "absolute", top: 6, right: 8, background: "none", border: "none", cursor: "pointer", fontSize: 18, lineHeight: 1, color: "var(--slate)", padding: 2 }}>×</button>
+    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, marginBottom: 8, paddingRight: 20 }}>Welcome to MethodFlow</p>
+    <ol style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "var(--graphite)", lineHeight: 1.75 }}>
+      <li>Paste your methodology (or click <em>Try an example</em>)</li>
+      <li>Click <strong>Generate flowchart</strong></li>
+      <li>Click any step on the canvas to edit it</li>
+    </ol>
+  </div>
+)}
+
 <h2>Generate from your method</h2>
 <label className="f">Research design<select value={method} onChange={e=>setMethod(e.target.value as Method)}>{METHODS.map(m=><option key={m} value={m}>{ML[m]}</option>)}</select></label>
-<label className="f">Key details<input value={extra} maxLength={300} onChange={e=>setExtra(e.target.value)} placeholder="Sample, instruments, analysis"/></label>
+<label className="f">Key details<input value={extra} maxLength={300} onChange={e=>setExtra(e.target.value)} placeholder="Optional: sample size, instruments, analysis"/></label>
 <label className="f">Methodology text
   <textarea value={text} maxLength={8000} rows={10} onChange={e=>setText(e.target.value)} placeholder="e.g., A cross-sectional survey of 250 students using stratified random sampling. Data collected via a 40-item questionnaire and analyzed using multiple regression in SPSS." style={{ resize: "vertical", minHeight: 180 }}/>
 </label>
@@ -444,7 +477,9 @@ return(<div className="app">
 
 <main className="canvas" aria-label="Diagram canvas">
 <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
-onConnect={c=>c.source&&c.target&&s.connect(c.source,c.target)} onNodeClick={(_,n)=>s.select({k:"n",id:n.id})} onEdgeClick={(_,e)=>s.select({k:"e",id:e.id})} onPaneClick={()=>s.select(null)}
+onConnect={c=>c.source&&c.target&&s.connect(c.source,c.target)}
+onNodeClick={(_,n)=>{ s.select({k:"n",id:n.id}); markNodeClicked(); }}
+onEdgeClick={(_,e)=>s.select({k:"e",id:e.id})} onPaneClick={()=>s.select(null)}
 onNodeDragStop={(_,n)=>s.move(n.id,Math.round(n.position.x),Math.round(n.position.y))}
 onNodesDelete={d=>s.remove(d.map(n=>n.id),[])} onEdgesDelete={d=>s.remove([],d.map(e=>e.id))}
 deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} maxZoom={2} fitView>
@@ -462,6 +497,17 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
   {groupBoxes}
 </ViewportPortal>
 <Background gap={24} size={1} color="#D9DEE3"/><Controls showInteractive={false}/></ReactFlow>
+
+{!hasClickedNode && !sel && ir.nodes.length > 0 && !busy && (
+  <div style={{
+    position: "absolute", bottom: 28, left: "50%", transform: "translateX(-50%)",
+    background: "var(--ink)", color: "#fff", padding: "10px 20px", borderRadius: 24,
+    fontSize: 13, fontWeight: 500, pointerEvents: "none", zIndex: 10,
+    boxShadow: "0 8px 24px rgba(0,0,0,0.2)", whiteSpace: "nowrap"
+  }}>
+    Click any step on the canvas to edit it
+  </div>
+)}
 
 {busy && (
   <div className="gen-overlay">
