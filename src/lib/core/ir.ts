@@ -7,6 +7,7 @@ export const FLOW_DIRECTIONS = ["auto", "tb", "lr"] as const;
 
 const id = z.string().min(1).max(40);
 const hex = z.string().regex(/^#[0-9A-Fa-f]{3,8}$/);
+const coord = z.number().finite().optional();
 
 export const NodeS = z.object({
   id,
@@ -14,8 +15,10 @@ export const NodeS = z.object({
   shape: z.enum(SHAPES),
   groupId: id.optional(),
   notes: z.string().max(300).optional(),
-  x: z.number().finite().optional(),
-  y: z.number().finite().optional(),
+  x: coord,
+  y: coord,
+  w: coord,
+  h: coord,
   fill: hex.optional(),
   stroke: hex.optional(),
   text: hex.optional(),
@@ -27,12 +30,18 @@ export const EdgeS = z.object({
   target: id,
   label: z.string().max(40).optional(),
   dashed: z.boolean().optional(),
+  points: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
+  labelPos: z.object({ x: z.number(), y: z.number(), anchor: z.enum(["start", "middle", "end"]) }).optional(),
 });
 
 export const GroupS = z.object({
   id,
   label: z.string().min(1).max(60),
   color: hex.optional(),
+  x: coord,
+  y: coord,
+  w: coord,
+  h: coord,
 });
 
 export const IRSchema = z.object({
@@ -65,8 +74,8 @@ export const emptyIR = (): IR => ({
     title: "Untitled flowchart",
     methodology: "custom",
     paletteId: "mono",
-    density: "spacious",
-    flowDirection: "tb",
+    density: "balanced",
+    flowDirection: "auto",
   },
   groups: [],
   nodes: [{ id: "n1", label: "Start", shape: "terminator" }],
