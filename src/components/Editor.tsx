@@ -25,17 +25,38 @@ const ML:Record<Method,string>={quantitative:"Quantitative",qualitative:"Qualita
 const SL:Record<Shape,string>={process:"Step",decision:"Decision",terminator:"Start / end",data:"Data",document:"Document",database:"Database"};
 const DL:Record<Density,string>={compact:"Compact",balanced:"Balanced",spacious:"Spacious"};
 
+const GEN_STAGES = [
+  { at: 0, msg: "Reading your methodology…" },
+  { at: 1500, msg: "Identifying the research design…" },
+  { at: 3500, msg: "Structuring phases and decision gates…" },
+  { at: 6000, msg: "Routing connections and revision loops…" },
+  { at: 9000, msg: "Validating flowchart logic…" },
+  { at: 12000, msg: "Finalizing your diagram…" },
+  { at: 18000, msg: "Complex design — refining the structure…" },
+];
+const UPLOAD_STAGES = [
+  { at: 0, msg: "Opening your document…" },
+  { at: 2000, msg: "Locating the methodology section…" },
+  { at: 5000, msg: "Extracting the research design…" },
+  { at: 8000, msg: "Structuring phases and decision gates…" },
+  { at: 12000, msg: "Validating flowchart logic…" },
+  { at: 16000, msg: "Finalizing your diagram…" },
+];
+const REFINE_STAGES = [
+  { at: 0, msg: "Reading your instruction…" },
+  { at: 1500, msg: "Applying the change…" },
+  { at: 4000, msg: "Validating flowchart logic…" },
+  { at: 7000, msg: "Finalizing…" },
+];
+
 function MFNode({data,selected}:NodeProps<Node<D>>){
   const w = data.w || 200;
   const h = data.h || 70;
-  
   const style = {
-    width: w, 
-    height: h,
+    width: w, height: h,
     "--node-fill": data.fill || "#fff",
     "--node-stroke": data.stroke || "var(--ink)"
   } as React.CSSProperties;
-
   return(
   <div className={"mf mf-"+data.shape+(selected?" is-sel":"")} style={style}>
   {data.shape==="decision"&&<svg className="mf-dia" viewBox="0 0 200 96" preserveAspectRatio="none" aria-hidden="true"><polygon points="100,1.5 198.5,48 100,94.5 1.5,48" style={{fill:"var(--node-fill)", stroke:"var(--node-stroke)"}}/></svg>}
@@ -68,6 +89,11 @@ const[cloudId,setCloudId]=useState<string|null>(null);
 const[user,setUser]=useState<User|null>(null);
 const[plan,setPlan]=useState<"free"|"pro">("free");
 
+// Thinking overlay state
+const[genStage,setGenStage]=useState("");
+const[genProgress,setGenProgress]=useState(0);
+const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
 const booted=useRef(false);const irRef=useRef(ir);irRef.current=ir;
 const checks=useMemo(()=>validateGraph(ir),[ir]);
 const pal=getPalette(ir.meta.paletteId);
@@ -99,9 +125,37 @@ const groupBoxes = useMemo(() => {
   });
 }, [ir.groups, pal]);
 
+useEffect(() => () => { if (stageTimer.current) clearInterval(stageTimer.current); }, []);
+
+function startProgress(stages: { at: number; msg: string }[]) {
+  if (stageTimer.current) clearInterval(stageTimer.current);
+  const start = Date.now();
+  setGenProgress(0);
+  setGenStage(stages[0].msg);
+  stageTimer.current = setInterval(() => {
+    const e = Date.now() - start;
+    let msg = stages[0].msg;
+    for (const st of stages) if (e >= st.at) msg = st.msg;
+    const last = stages[stages.length - 1].at;
+    const p = Math.min(95, (e / (last + 6000)) * 95);
+    setGenStage(msg);
+    setGenProgress(p);
+  }, 180);
+}
+
+function finishProgress(ok: boolean) {
+  if (stageTimer.current) { clearInterval(stageTimer.current); stageTimer.current = null; }
+  if (ok) {
+    setGenProgress(100);
+    setGenStage("Done — rendering your diagram…");
+    setTimeout(() => { setBusy(false); setGenProgress(0); setGenStage(""); }, 600);
+  } else {
+    setBusy(false); setGenProgress(0); setGenStage("");
+  }
+}
+
 useEffect(()=>{
   const supabase = createClient();
-  
   const fetchUserAndPlan = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     setUser(user);
@@ -110,18 +164,14 @@ useEffect(()=>{
       if (profile) setPlan(profile.plan as "free" | "pro");
     }
   };
-  
   fetchUserAndPlan();
-
   const {data: authListener} = supabase.auth.onAuthStateChange((_, session) => {
     setUser(session?.user ?? null);
     if (session?.user) {
       supabase.from("profiles").select("plan").eq("id", session.user.id).single().then(({data}) => {
         if (data) setPlan(data.plan as "free" | "pro");
       });
-    } else {
-      setPlan("free");
-    }
+    } else { setPlan("free"); }
   });
   return () => authListener.subscription.unsubscribe();
 },[]);
@@ -132,27 +182,20 @@ useEffect(()=>{
   const params = new URLSearchParams(location.search);
   const id = params.get("id");
   const t = params.get("t");
-  
   const init = async () => {
     if (id) {
       const supabase = createClient();
       const { data, error } = await supabase.from("diagrams").select("ir").eq("id", id).single();
       if (!error && data?.ir) {
-        setCloudId(id);
-        useDiagram.getState().load(data.ir);
-        booted.current = true;
-        return;
+        setCloudId(id); useDiagram.getState().load(data.ir); booted.current = true; return;
       }
     }
-    
     const tpl = t ? getTemplate(t) : undefined;
     const d = loadDraft();
     let start = d ?? TEMPLATES[0].ir;
     if (tpl && (!d || confirm("Replace your saved draft with this template?"))) start = tpl.ir;
-    useDiagram.getState().load(start);
-    booted.current = true;
+    useDiagram.getState().load(start); booted.current = true;
   };
-  
   init();
 },[]);
 
@@ -161,8 +204,7 @@ useEffect(()=>{
     const anyNode = n as any;
     const palShape = pal.shapes[n.shape];
     return {
-      id:n.id,
-      type:"mf",
+      id:n.id, type:"mf",
       position:{x:anyNode.x??0, y:anyNode.y??0},
       data: {
         label: n.label,
@@ -193,27 +235,16 @@ function loadExample(){
 async function handleSignOut() {
   const supabase = createClient();
   await supabase.auth.signOut();
-  router.push("/");
-  router.refresh();
+  router.push("/"); router.refresh();
 }
 
 async function saveCloud() {
-  if (!user) {
-    setMsg("Please sign in to save to the cloud.");
-    window.location.href = "/login";
-    return;
-  }
-
-  if (plan === "free") {
-    openUpgrade("feature");
-    return;
-  }
-
+  if (!user) { setMsg("Please sign in to save to the cloud."); window.location.href = "/login"; return; }
+  if (plan === "free") { openUpgrade("feature"); return; }
   setBusy(true); setMsg("Saving to cloud...");
   try {
     const supabase = createClient();
     const d = useDiagram.getState().ir;
-    
     if (cloudId) {
       const { error } = await supabase.from("diagrams").update({ ir: d, title: d.meta.title, updated_at: new Date().toISOString() }).eq("id", cloudId);
       if (error) throw error;
@@ -221,126 +252,101 @@ async function saveCloud() {
     } else {
       const { data, error } = await supabase.from("diagrams").insert({ user_id: user.id, ir: d, title: d.meta.title }).select("id").single();
       if (error) throw error;
-      
       setCloudId(data.id);
       window.history.replaceState(null, '', `?id=${data.id}`);
       setMsg("Saved to cloud.");
     }
-  } catch (e: any) {
-    setMsg(e.message || "Failed to save to cloud.");
-  } finally {
-    setBusy(false);
-  }
+  } catch (e: any) { setMsg(e.message || "Failed to save to cloud."); }
+  finally { setBusy(false); }
 }
 
 async function gen(){
-  setBusy(true);setMsg("");
+  setBusy(true); setMsg("");
+  startProgress(GEN_STAGES);
+  let ok = false;
   try{
     const r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({methodology:method,text,extra})});
     const j=await r.json();
-    
-    if(r.status === 429){
-      setMsg("");
-      openUpgrade("limit");
-      return;
+    if(r.status === 429){ setMsg(""); openUpgrade("limit"); }
+    else if(!r.ok){ setMsg(j.message||"Generation failed."); }
+    else {
+      const p=IRSchema.safeParse(j.ir);
+      if(!p.success){ setMsg("The result was not valid. Your diagram is unchanged."); }
+      else {
+        const g=useDiagram.getState(); g.commit(p.data);
+        useDiagram.setState(x=>({rev:x.rev+1}));
+        setMsg((j.warnings as string[]|undefined)?.join(" ")||"Draft ready. Check every step against your own method.");
+        setPanel(null);
+        ok = true;
+      }
     }
-    
-    if(!r.ok){setMsg(j.message||"Generation failed.");return}
-    const p=IRSchema.safeParse(j.ir);
-    if(!p.success){setMsg("The result was not valid. Your diagram is unchanged.");return}
-    const g=useDiagram.getState();g.commit(p.data);
-    useDiagram.setState(x=>({rev:x.rev+1}));
-    setMsg((j.warnings as string[]|undefined)?.join(" ")||"Draft ready. Check every step against your own method.");
-    setPanel(null)
-  }catch{setMsg("Network error. Your diagram is unchanged.")}finally{setBusy(false)}
+  }catch{ setMsg("Network error. Your diagram is unchanged."); }
+  finishProgress(ok);
 }
 
 async function upload(file?: File) {
   if (!file) return;
-  if (plan === "free") {
-    openUpgrade("feature");
-    return;
-  }
+  if (plan === "free") { openUpgrade("feature"); return; }
   setUploadedFile(file.name);
-  setBusy(true); 
-  setMsg(`Extracting text from ${file.name}...`);
-  
+  setBusy(true); setMsg("");
+  startProgress(UPLOAD_STAGES);
+  let ok = false;
   try {
     const formData = new FormData();
     formData.append("file", file);
-
     const r = await fetch("/api/upload", { method: "POST", body: formData });
-    
     const rawText = await r.text();
     let j: any;
-    try {
-      j = JSON.parse(rawText);
-    } catch {
+    try { j = JSON.parse(rawText); } catch {
       if (!r.ok) throw new Error(`Server Error: ${r.status} ${r.statusText}`);
       throw new Error("Invalid response from server");
     }
-
-    if (!r.ok) {
-      setMsg(j.message || "Upload failed.");
-      return;
+    if (!r.ok) { setMsg(j.message || "Upload failed."); }
+    else {
+      const p = IRSchema.safeParse(j.ir);
+      if (!p.success) { setMsg("The result was not valid."); }
+      else {
+        const g = useDiagram.getState(); g.commit(p.data);
+        useDiagram.setState(x => ({ rev: x.rev + 1 }));
+        setMsg("Draft ready from uploaded document.");
+        setPanel(null);
+        ok = true;
+      }
     }
-
-    const p = IRSchema.safeParse(j.ir);
-    if (!p.success) {
-      setMsg("The result was not valid.");
-      return;
-    }
-
-    const g = useDiagram.getState();
-    g.commit(p.data);
-    useDiagram.setState(x => ({ rev: x.rev + 1 }));
-    setMsg("Draft ready from uploaded document.");
-    setPanel(null);
-  } catch (err: any) {
-    setMsg(err.message || "Network error during upload.");
-  } finally {
-    setBusy(false);
-    setUploadedFile(null);
-  }
+  } catch (err: any) { setMsg(err.message || "Network error during upload."); }
+  setUploadedFile(null);
+  finishProgress(ok);
 }
 
 async function doRefine(){
   if(!refineText.trim())return;
-  setBusy(true);setMsg("");
+  setBusy(true); setMsg("");
+  startProgress(REFINE_STAGES);
+  let ok = false;
   try{
     const r=await fetch("/api/refine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ir:useDiagram.getState().ir,instruction:refineText})});
     const j=await r.json();
-    
-    if(r.status === 429){
-      setMsg("");
-      openUpgrade("limit");
-      return;
+    if(r.status === 429){ setMsg(""); openUpgrade("limit"); }
+    else if(!r.ok){ setMsg(j.message||"Refine failed."); }
+    else {
+      const p=IRSchema.safeParse(j.ir);
+      if(!p.success){ setMsg("The result was not valid. Your diagram is unchanged."); }
+      else {
+        const g=useDiagram.getState(); g.commit(p.data);
+        useDiagram.setState(x=>({rev:x.rev+1}));
+        setMsg("Refined successfully.");
+        setRefineText(""); setPanel(null);
+        ok = true;
+      }
     }
-    
-    if(!r.ok){setMsg(j.message||"Refine failed.");return}
-    const p=IRSchema.safeParse(j.ir);
-    if(!p.success){setMsg("The result was not valid. Your diagram is unchanged.");return}
-    const g=useDiagram.getState();
-    g.commit(p.data);
-    useDiagram.setState(x=>({rev:x.rev+1}));
-    setMsg("Refined successfully.");
-    setRefineText("");
-    setPanel(null);
-  }catch{setMsg("Network error. Your diagram is unchanged.")}finally{setBusy(false)}
+  }catch{ setMsg("Network error. Your diagram is unchanged."); }
+  finishProgress(ok);
 }
 
 async function exp(k:string){
-  if ((k === "docx" || k === "tikz") && plan === "free") {
-    setMenu(false);
-    openUpgrade("feature");
-    return;
-  }
-  
+  if ((k === "docx" || k === "tikz") && plan === "free") { setMenu(false); openUpgrade("feature"); return; }
   setMenu(false);
-  const d=useDiagram.getState().ir;
-  const n=slug(d.meta.title);
-  setMsg("");
-  
+  const d=useDiagram.getState().ir; const n=slug(d.meta.title); setMsg("");
   try{
     if(k==="svg"){
       download(new Blob([toSVG(d,page.theme,page.font,undefined,plan==="free").svg],{type:"image/svg+xml"}),n+".svg");
@@ -376,15 +382,11 @@ return(<div className="app">
 <button onClick={s.undo} disabled={!past.length} aria-label="Undo">Undo</button>
 <button onClick={s.redo} disabled={!future.length} aria-label="Redo">Redo</button>
 <button onClick={s.relayout}>Auto-layout</button>
-<button onClick={()=>setShowGuide(!showGuide)}>
-  {showGuide ? "Hide A4" : "Show A4"}
-</button>
+<button onClick={()=>setShowGuide(!showGuide)}>{showGuide ? "Hide A4" : "Show A4"}</button>
 
 {user ? (
   <div className="row" style={{ alignItems: "center", gap: 8, marginLeft: 8 }}>
-    <Link href="/dashboard" className="btn ghost" style={{ padding: "5px 10px", fontSize: 13, textDecoration: "none" }} title={user.email}>
-      My Dashboard
-    </Link>
+    <Link href="/dashboard" className="btn ghost" style={{ padding: "5px 10px", fontSize: 13, textDecoration: "none" }} title={user.email}>My Dashboard</Link>
     <button onClick={handleSignOut} style={{ fontSize: 13, padding: "5px 10px" }}>Sign out</button>
   </div>
 ) : (
@@ -406,60 +408,30 @@ return(<div className="app">
 <label className="f">Research design<select value={method} onChange={e=>setMethod(e.target.value as Method)}>{METHODS.map(m=><option key={m} value={m}>{ML[m]}</option>)}</select></label>
 <label className="f">Key details<input value={extra} maxLength={300} onChange={e=>setExtra(e.target.value)} placeholder="Sample, instruments, analysis"/></label>
 <label className="f">Methodology text
-  <textarea 
-    value={text} 
-    maxLength={8000} 
-    rows={10} 
-    onChange={e=>setText(e.target.value)} 
-    placeholder="e.g., A cross-sectional survey of 250 students using stratified random sampling. Data collected via a 40-item questionnaire and analyzed using multiple regression in SPSS."
-    style={{ resize: "vertical", minHeight: 180 }}
-  />
+  <textarea value={text} maxLength={8000} rows={10} onChange={e=>setText(e.target.value)} placeholder="e.g., A cross-sectional survey of 250 students using stratified random sampling. Data collected via a 40-item questionnaire and analyzed using multiple regression in SPSS." style={{ resize: "vertical", minHeight: 180 }}/>
 </label>
 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: -4, marginBottom: 8 }}>
-  <button className="note" style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }} onClick={loadExample}>
-    Try an example
-  </button>
-  <button className="note" style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }} onClick={() => setShowPromptGuide(true)}>
-    How to write a great prompt
-  </button>
+  <button className="note" style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }} onClick={loadExample}>Try an example</button>
+  <button className="note" style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }} onClick={() => setShowPromptGuide(true)}>How to write a great prompt</button>
 </div>
 <button className="pri wide" onClick={gen} disabled={busy}>{busy?"Generating…":"Generate flowchart"}</button>
 
 <div style={{ marginTop: 8, marginBottom: 24, textAlign: "center" }}>
-  <label style={{ 
-    display: "inline-flex", alignItems: "center", justifyContent: "center", 
-    padding: "6px 12px", border: "1px solid var(--line)", borderRadius: "var(--r)", 
-    cursor: busy ? "wait" : "pointer", fontSize: 13, color: "var(--graphite)",
-    background: "transparent", transition: "all 0.2s"
-  }}>
-    <span style={{ fontWeight: 500 }}>
-      {busy && uploadedFile ? `Processing ${uploadedFile}...` : "Or upload a PDF / DOCX"}
-    </span>
-    <input 
-      type="file" 
-      accept=".pdf,.docx,.txt" 
-      onChange={e => { upload(e.target.files?.[0]); e.target.value = ""; }} 
-      disabled={busy}
-      style={{ display: "none" }}
-    />
+  <label style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "6px 12px", border: "1px solid var(--line)", borderRadius: "var(--r)", cursor: busy ? "wait" : "pointer", fontSize: 13, color: "var(--graphite)", background: "transparent", transition: "all 0.2s" }}>
+    <span style={{ fontWeight: 500 }}>{busy && uploadedFile ? `Processing ${uploadedFile}...` : "Or upload a PDF / DOCX"}</span>
+    <input type="file" accept=".pdf,.docx,.txt" onChange={e => { upload(e.target.files?.[0]); e.target.value = ""; }} disabled={busy} style={{ display: "none" }}/>
   </label>
-  <p className="note" style={{ marginTop: 8, fontSize: 11 }}>
-    <strong>Pro tip:</strong> Include sample size, instruments, and analysis methods in your text for the most accurate diagram.
-  </p>
+  <p className="note" style={{ marginTop: 8, fontSize: 11 }}><strong>Pro tip:</strong> Include sample size, instruments, and analysis methods in your text for the most accurate diagram.</p>
 </div>
 
 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 16 }}>
   <h2 style={{ margin: 0 }}>Refine with AI</h2>
-  <button className="note" style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }} onClick={() => setShowPromptGuide(true)}>
-    Guide
-  </button>
+  <button className="note" style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }} onClick={() => setShowPromptGuide(true)}>Guide</button>
 </div>
 <label className="f">Instruction
   <input value={refineText} maxLength={500} onChange={e=>setRefineText(e.target.value)} placeholder="e.g., Add a decision gate for missing data"/>
 </label>
-<button className="wide" onClick={doRefine} disabled={busy || !refineText.trim()}>
-  {busy ? "Refining…" : "Apply Edit"}
-</button>
+<button className="wide" onClick={doRefine} disabled={busy || !refineText.trim()}>{busy ? "Refining…" : "Apply Edit"}</button>
 
 {msg&&<p className="note" role="status" style={{marginTop:8}}>{msg}</p>}
 <h2>Templates</h2>
@@ -490,6 +462,16 @@ deleteKeyCode={["Backspace","Delete"]} snapToGrid snapGrid={[8,8]} minZoom={.2} 
   {groupBoxes}
 </ViewportPortal>
 <Background gap={24} size={1} color="#D9DEE3"/><Controls showInteractive={false}/></ReactFlow>
+
+{busy && (
+  <div className="gen-overlay">
+    <div className="gen-card">
+      <div className="thinking-dots"><span/><span/><span/></div>
+      <p className="gen-stage">{genStage}</p>
+      <div className="gen-bar"><div className="gen-fill" style={{ width: `${genProgress}%`, background: genProgress === 100 ? "#2E6B45" : "var(--accent)" }} /></div>
+    </div>
+  </div>
+)}
 </main>
 
 <aside className="side right" data-open={panel==="r"}>

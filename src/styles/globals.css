@@ -72,3 +72,66 @@ input.col{width:28px;height:26px;padding:0;border:1px solid var(--line);border-r
 @media(max-width:980px){.hero{grid-template-columns:1fr;padding:48px 0}.cols{grid-template-columns:1fr;gap:28px}.tlist a{flex-direction:column;gap:4px}.tlist span{text-align:left}.nav{gap:14px}}
 @media(max-width:900px){.app{grid-template-columns:minmax(0,1fr)}.app>.canvas{grid-column:1;grid-row:2}.side{position:fixed;top:52px;bottom:0;width:min(320px,88vw);z-index:6;box-shadow:0 8px 24px rgba(18,22,27,.15);transform:translateX(-102%);transition:transform .18s}.right{right:0;left:auto;transform:translateX(102%)}.side[data-open=true]{transform:none}.m-only{display:inline-block}.status,.title{display:none}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+/* Thinking Overlay */
+.gen-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: rgba(243, 245, 247, 0.75);
+  backdrop-filter: blur(6px);
+  display: grid;
+  place-items: center;
+  animation: fadeIn 0.2s ease;
+}
+.gen-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 32px 40px;
+  box-shadow: 0 24px 64px rgba(18, 22, 27, 0.18);
+  min-width: 360px;
+  max-width: 440px;
+  text-align: center;
+}
+.gen-stage {
+  margin: 18px 0 0;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+  min-height: 44px;
+  transition: opacity 0.3s;
+}
+.gen-bar {
+  margin-top: 18px;
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.gen-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.25s ease, background 0.3s ease;
+}
+.thinking-dots {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.thinking-dots span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulseDot 1.2s infinite ease-in-out;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes pulseDot {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
