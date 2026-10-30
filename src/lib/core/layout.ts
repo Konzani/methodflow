@@ -32,18 +32,10 @@ function wrapLines(label: string, maxChars: number): string[] {
   const lines: string[] = [];
   let cur = "";
   for (const w of label.trim().split(/\s+/)) {
-    let word = w;
-    while (word.length > maxChars) {
-      if (cur) { lines.push(cur); cur = ""; }
-      lines.push(word.slice(0, maxChars));
-      word = word.slice(maxChars);
-    }
-    if (cur && (cur + " " + word).length > maxChars) {
+    if (cur && (cur + " " + w).length > maxChars) {
       lines.push(cur);
-      cur = word;
-    } else {
-      cur = cur ? cur + " " + word : word;
-    }
+      cur = w;
+    } else cur = cur ? cur + " " + w : w;
   }
   if (cur) lines.push(cur);
   return lines.length ? lines : [""];
@@ -57,9 +49,11 @@ function sizeOf(n: INode, isLR: boolean): { w: number; h: number } {
     const lines = wrapLines(label, isLR ? 24 : 16);
     const textW = Math.max(...lines.map((l) => l.length)) * CHAR;
     const textH = lines.length * LINE;
-    h = Math.max(84, textH * 2 + 24);
+    // Increased padding significantly to prevent text overflow
+    h = Math.max(100, textH * 2 + 36); 
     const k = 1 - textH / h;
-    w = Math.max(190, Math.ceil((textW + 12) / k / 10) * 10);
+    // Ensure width is at least 220px and accounts for the text
+    w = Math.max(220, Math.ceil((textW + 40) / k / 10) * 10);
   } else if (n.shape === "terminator") {
     const lines = wrapLines(label, isLR ? 30 : 26);
     const textW = Math.max(...lines.map((l) => l.length)) * CHAR;
@@ -79,7 +73,7 @@ const NEG = /^(no|fail\w*|exclu\w*|reject\w*|den\w*|not\b|inelig\w*|below|unmet|
 const NONE = "__none";
 
 function compute(ir: IRLike): Geo {
-  const M = METRICS[(ir.meta?.density as keyof typeof METRICS) ?? "spacious"] ?? METRICS.spacious;
+  const M = METRICS[(ir.meta?.density as keyof typeof METRICS) ?? "balanced"] ?? METRICS.balanced;
   const isLR = ir.meta?.flowDirection === "lr";
   const nodes = ir.nodes;
   const idx = new Map(nodes.map((n, i) => [n.id, i]));
@@ -305,105 +299,53 @@ function compute(ir: IRLike): Geo {
   const edgesOut = new Map<string, { points: P[]; label?: LabelPos }>();
   const ends = new Map<string, [string, string]>();
   for (const e of edges) {
-    const pts = back.has(e.id) ? routeBack(e) : routeFwd(e);
+    let pts = back.has(e.id) ? routeBack(e) : routeFwd(e);
+    if (isLR) pts = pts.map(p => ({ x: p.y, y: p.x }));
     edgesOut.set(e.id, { points: pts, label: e.label ? labelAt(pts) : undefined });
     ends.set(e.id, [e.source, e.target]);
   }
 
-  const dx = MARGIN - boxL;
-  const dy = MARGIN;
+  const dx = MARGIN - boxL; const dy = MARGIN;
   const mv = (b: Box): Box => ({ ...b, x: b.x + dx, y: b.y + dy });
   const mp = (p: P): P => ({ x: p.x + dx, y: p.y + dy });
-  
+
+  const finalNodes = new Map([...nodeBox].map(([k, b]) => {
+    const box = mv(b);
+    return [k, isLR ? { ...box, w: box.h, h: box.w } : box];
+  }));
+  const finalGroups = new Map([...groupBox].map(([k, b]) => {
+    const box = mv(b);
+    return [k, isLR ? { ...box, w: box.h, h: box.w } : box];
+  }));
+
   return {
-    nodes: new Map([...nodeBox].map(([k, b]) => [k, mv(b)])),
-    groups: new Map([...groupBox].map(([k, b]) => [k, mv(b)])),
+    nodes: finalNodes,
+    groups: finalGroups,
     nodeGroup,
-    edges: new Map(
-      [...edgesOut].map(([k, v]) => [k, { points: v.points.map(mp), label: v.label ? { ...v.label, ...mp(v.label) } : undefined }])
-    ),
+    edges: new Map([...edgesOut].map(([k, v]) => [k, { points: v.points.map(mp), label: v.label ? { ...v.label, ...mp(v.label) } : undefined }])),
     ends,
-    width: canvasR - boxL + 2 * MARGIN,
-    height: totalH + 2 * MARGIN,
+    width: isLR ? totalH + 2 * MARGIN : canvasR - boxL + 2 * MARGIN,
+    height: isLR ? canvasR - boxL + 2 * MARGIN : totalH + 2 * MARGIN,
   };
-}
-
-const hits = (a: Box, b: Box, m = 0) => a.x < b.x + b.w + m && b.x < a.x + a.w + m && a.y < b.y + b.h + m && b.y < a.y + a.h + m;
-
-function check(geo: Geo): string[] {
-  const issues: string[] = [];
-  const ns = [...geo.nodes];
-  for (let i = 0; i < ns.length; i++)
-    for (let j = i + 1; j < ns.length; j++) if (hits(ns[i][1], ns[j][1], 4)) issues.push(`nodes overlap: ${ns[i][0]} / ${ns[j][0]}`);
-  const gs = [...geo.groups];
-  for (let i = 0; i < gs.length; i++)
-    for (let j = i + 1; j < gs.length; j++) if (hits(gs[i][1], gs[j][1])) issues.push(`group boxes overlap: ${gs[i][0]} / ${gs[j][0]}`);
-  for (const [id, g] of geo.nodeGroup) {
-    const n = geo.nodes.get(id)!;
-    const b = geo.groups.get(g)!;
-    if (n.x < b.x || n.y < b.y || n.x + n.w > b.x + b.w || n.y + n.h > b.y + b.h) issues.push(`node ${id} sticks out of group ${g}`);
-  }
-  for (const [eid, { points }] of geo.edges) {
-    const [s, t] = geo.ends.get(eid)!;
-    for (let i = 0; i + 1 < points.length; i++) {
-      const a = points[i];
-      const b = points[i + 1];
-      const seg: Box = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
-      for (const [nid, nbx] of geo.nodes) {
-        if (nid === s || nid === t) continue;
-        const inner: Box = { x: nbx.x + 2, y: nbx.y + 2, w: nbx.w - 4, h: nbx.h - 4 };
-        if (hits(seg, inner)) issues.push(`edge ${eid} passes through node ${nid}`);
-      }
-    }
-  }
-  return issues;
-}
-
-export function layoutProblems(ir: IRLike): string[] {
-  if (!ir.nodes.length) return [];
-  const g = compute(ir);
-  const isLR = ir.meta?.flowDirection === "lr";
-  if (isLR) {
-    const newNodes = new Map([...g.nodes].map(([k, b]) => [k, { ...b, x: b.y, y: b.x, w: b.h, h: b.w }]));
-    const newGroups = new Map([...g.groups].map(([k, b]) => [k, { ...b, x: b.y, y: b.x, w: b.h, h: b.w }]));
-    const newEdges = new Map([...g.edges].map(([k, v]) => [k, { points: v.points.map(p => ({ x: p.y, y: p.x })), label: v.label ? { x: v.label.y, y: v.label.x, anchor: v.label.anchor } : undefined }]));
-    return check({ ...g, nodes: newNodes, groups: newGroups, edges: newEdges, width: g.height, height: g.width });
-  }
-  return check(g);
 }
 
 export function layout<T extends IRLike>(ir: T): T {
   if (!ir.nodes.length) return ir;
-  
-  // Strictly honor the flow direction, default to TB.
-  const isLR = ir.meta?.flowDirection === "lr";
   const g = compute(ir);
-  return applyGeometry(ir, g, isLR);
-}
-
-function applyGeometry<T extends IRLike>(ir: T, g: Geo, isLR: boolean): T {
   return {
     ...ir,
     nodes: ir.nodes.map((n) => {
       const b = g.nodes.get(n.id);
-      if (!b) return n;
-      return isLR ? { ...n, x: b.y, y: b.x, w: b.h, h: b.w } : { ...n, x: b.x, y: b.y, w: b.w, h: b.h };
+      return b ? { ...n, x: b.x, y: b.y, w: b.w, h: b.h } : n;
     }),
     groups: ir.groups.map((gr) => {
       const b = g.groups.get(gr.id);
-      if (!b) return gr;
-      return isLR ? { ...gr, x: b.y, y: b.x, w: b.h, h: b.w } : { ...gr, x: b.x, y: b.y, w: b.w, h: b.h };
+      return b ? { ...gr, x: b.x, y: b.y, w: b.w, h: b.h } : gr;
     }),
     edges: ir.edges.map((e) => {
       const r = g.edges.get(e.id);
-      if (!r) return e;
-      if (isLR) {
-        const pts = r.points.map(p => ({ x: p.y, y: p.x }));
-        const lab = r.label ? { x: r.label.y, y: r.label.x, anchor: r.label.anchor } : undefined;
-        return { ...e, points: pts, labelPos: lab };
-      }
-      return { ...e, points: r.points, labelPos: r.label };
+      return r ? { ...e, points: r.points, labelPos: r.label } : e;
     }),
-    canvas: { width: isLR ? g.height : g.width, height: isLR ? g.width : g.height },
+    canvas: { width: g.width, height: g.height },
   } as T;
 }

@@ -1,16 +1,3 @@
-/**
- * MethodFlow — Research Methodology Engine Prompts
- * Drop-in prompt-layer upgrade for the existing v1.1 IR schema.
- *
- * Compatibility notes:
- * - Preserves the existing JSON schema and node shapes.
- * - Preserves the existing METHODS, PALETTE_IDS, and DENSITIES imports.
- * - Keeps SYSTEM, systemPrompt, blueprintFor, userMsg, repairMsg,
- *   polishMsg, UNDERSTAND_SYSTEM, understandMsg, and REFINE_SYSTEM exports.
- * - The prompt improves methodology reasoning; deterministic schema validation
- *   should still be performed in application code after generation.
- */
-
 import { METHODS, PALETTE_IDS, DENSITIES } from "./ir";
 
 const strip = (s: string) =>
@@ -68,10 +55,6 @@ const METHODS_LIST = METHODS.join("|");
 const PALETTE_LIST = PALETTE_IDS.join("|");
 const DENSITY_LIST = DENSITIES.join("|");
 
-/**
- * The central generator prompt.
- * Keep all schema-enforcement rules aligned with the actual renderer.
- */
 export const systemPrompt = (isPro = false) => `
 ROLE
 You are MethodFlow, an expert research-methodology architect and flowchart compiler.
@@ -228,6 +211,28 @@ FLOW SEMANTICS AND SHAPES
 - "document": a protocol, instrument, report, or review document when it is a meaningful
   artefact in the workflow.
 - "database": a database/repository when it is a meaningful source or destination.
+- GRAPH TOPOLOGY: When the methodology describes parallel workstreams (e.g., analyzing three different datasets, running three different tests, or splitting a survey into two groups), you MUST create a "split" and a "merge". 
+- Example: n1 splits into n2, n3, and n4. Then n2, n3, and n4 must all point to n5. 
+- DO NOT chain parallel steps sequentially (e.g., n2 -> n3 -> n4). This is scientifically inaccurate and will be rejected.
+
+TOPOLOGY EXAMPLE (Parallel Branches):
+{
+  "nodes": [
+    { "id": "n1", "label": "Collect blood samples", "shape": "process" },
+    { "id": "n2", "label": "Run RNA-seq", "shape": "process" },
+    { "id": "n3", "label": "Run LC-MS/MS", "shape": "process" },
+    { "id": "n4", "label": "Run GC-MS", "shape": "process" },
+    { "id": "n5", "label": "Integrate omics layers", "shape": "process" }
+  ],
+  "edges": [
+    { "id": "e1", "source": "n1", "target": "n2" },
+    { "id": "e2", "source": "n1", "target": "n3" },
+    { "id": "e3", "source": "n1", "target": "n4" },
+    { "id": "e4", "source": "n2", "target": "n5" },
+    { "id": "e5", "source": "n3", "target": "n5" },
+    { "id": "e6", "source": "n4", "target": "n5" }
+  ]
+}
 - Use data/document/database nodes selectively; do not turn every dataset or output into
   a separate node if the flow is clearer with a process label.
 - Start with one terminator and end with one terminator for ordinary workflows.
@@ -425,10 +430,6 @@ ${EXAMPLE}
 
 export const SYSTEM = systemPrompt(false);
 
-/**
- * Compact blueprints are guidance, not mandatory templates.
- * The user-provided method takes precedence.
- */
 const GENERIC_BLUEPRINT =
   "Identify the actual research design; map its inputs, procedures, dependencies, analysis, quality checks, decision paths, integration and outputs. Use only applicable stages. The source methodology takes precedence.";
 
@@ -471,9 +472,6 @@ export const polishMsg = (issues: string[]) =>
 ${issues.slice(0, 10).map((i) => "- " + i).join("\n")}
 Return the complete corrected JSON object only. Preserve existing node IDs for unchanged nodes and preserve all scientifically correct content. Fix the listed problems without introducing unsupported facts, breaking dependencies, leaving dangling edges, or creating invalid decision/revision paths.`;
 
-/**
- * Document understanding prompt: faithful extraction before diagram generation.
- */
 export const UNDERSTAND_SYSTEM = `You are MethodFlow's methodology-extraction component.
 Read the supplied research document and extract a faithful, ordered methodology outline.
 Output ONLY valid JSON:
@@ -508,9 +506,6 @@ EXTRACTION RULES
 export const understandMsg = (text: string) =>
   `<document>\n${strip(text)}\n</document>`;
 
-/**
- * Refinement prompt: change the graph safely rather than merely obeying a visual request.
- */
 export const REFINE_SYSTEM = `You are MethodFlow's academic methodology flowchart editor.
 You receive a current v1.1 flowchart JSON and a user instruction. Return ONLY the
 complete updated JSON object, with no prose or Markdown.
