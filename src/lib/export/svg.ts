@@ -59,10 +59,18 @@ export function toSVG(src:IR,theme:Theme="mono",font:Font="sans",paletteOverride
   // 5. Watermark
   const wmPattern = watermark ? `
     <pattern id="wm-pattern" width="400" height="400" patternUnits="userSpaceOnUse" patternTransform="rotate(-30)">
-      <text x="20" y="200" font-family="Georgia, serif" font-size="48" fill="#000" opacity="0.03" font-weight="600" letter-spacing="0.05em">MethodFlow</text>
-    </pattern>` : "";
+      <text x="20" y="200" font-family="Georgia, serif" font-size="52" fill="#12161B" opacity="0.06" font-weight="600" letter-spacing="0.1em">METHODFLOW</text>
+    </pattern>
+  ` : "";
+
   const wmRect = watermark ? `<rect width="100%" height="100%" fill="url(#wm-pattern)" />` : "";
-  const wmBadge = watermark ? `<text x="${W - 24}" y="${H - 20}" font-family="Arial, sans-serif" font-size="11" fill="#9ca3af" text-anchor="end" letter-spacing="0.05em">MethodFlow</text>` : "";
+
+  const wmBadge = watermark ? `
+    <g transform="translate(${W - 130}, ${H - 35})">
+      <rect width="110" height="24" rx="12" fill="#F3F5F7" stroke="#D9DEE3" stroke-width="1"/>
+      <text x="55" y="16" font-family="Arial, sans-serif" font-size="10" fill="#66717C" text-anchor="middle" font-weight="700" letter-spacing="0.05em">MethodFlow</text>
+    </g>
+  ` : "";
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${ff}" role="img" aria-label="${esc(laidOut.meta.title)}">
     <defs>
