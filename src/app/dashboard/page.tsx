@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header, Footer } from "@/components/Chrome";
+import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 
 export const metadata = {
   title: "Dashboard | MethodFlow",
@@ -86,6 +87,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             ))}
           </div>
         )}
+
+        {/* Danger Zone */}
+        <div style={{ marginTop: 96, borderTop: "1px solid var(--line)", paddingTop: 32 }}>
+          <h2 style={{ fontSize: 20, color: "var(--danger)" }}>Danger Zone</h2>
+          <p style={{ color: "var(--graphite)", fontSize: 14, marginBottom: 16 }}>
+            Permanently delete your account, cloud diagrams, and all associated data. This action cannot be undone.
+          </p>
+          <DeleteAccountButton />
+        </div>
+
       </main>
       <Footer />
     </>
