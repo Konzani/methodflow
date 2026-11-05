@@ -1277,7 +1277,7 @@ function Inner() {
             {checks.length ? (
               <ul className="checks">
                 {checks.map((c, i) => (
-                  <li key={i}>{c.message}</li>
+                  <li key={i}>{c}</li>
                 ))}
               </ul>
             ) : (
