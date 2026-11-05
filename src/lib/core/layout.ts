@@ -1,3 +1,5 @@
+import dagre from "dagre";
+
 export type P = { x: number; y: number };
 export type LabelPos = P & { anchor: "start" | "middle" | "end" };
 type Box = { x: number; y: number; w: number; h: number };
@@ -331,6 +333,36 @@ function compute(ir: IRLike): Geo {
 
 export function layout<T extends IRLike>(ir: T): T {
   if (!ir.nodes.length) return ir;
+
+  // If the user requested Left-to-Right, use the standard Dagre engine
+  if (ir.meta?.flowDirection === "lr") {
+    const g = new dagre.graphlib.Graph();
+    g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 80, marginx: 40, marginy: 40 });
+    g.setDefaultEdgeLabel(() => ({}));
+
+    ir.nodes.forEach((n) => {
+      // Approximate sizes for LR
+      const w = n.label.length * 7.5 + 30;
+      const h = 60;
+      g.setNode(n.id, { width: w, height: h });
+    });
+
+    ir.edges.forEach((e) => g.setEdge(e.source, e.target));
+    dagre.layout(g);
+
+    return {
+      ...ir,
+      nodes: ir.nodes.map((n) => {
+        const p = g.node(n.id);
+        const w = n.label.length * 7.5 + 30;
+        return { ...n, x: p.x - w / 2, y: p.y - 30, w, h: 60 } as any;
+      }),
+      groups: [], // Hide bands for LR mode to prevent layout breaking
+      canvas: { width: g.graph().width! + 80, height: g.graph().height! + 80 },
+    } as any;
+  }
+
+  // Otherwise, use your custom deterministic Top-to-Bottom engine
   const g = compute(ir);
   return {
     ...ir,
