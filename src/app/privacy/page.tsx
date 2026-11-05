@@ -42,7 +42,10 @@ export default function Privacy() {
         <p>We use strictly necessary cookies to keep you logged in and secure your session. We may also use privacy-friendly analytics cookies to measure site traffic. We do not use third-party advertising or tracking cookies.</p>
 
         <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>7. Contact Us</h2>
-        <p>If you have any questions about this Privacy Policy or your data, please contact us at <a href="mailto:methodflow@geodesia.online">methodflow@geodesia.online</a>.</p>
+        <p>
+          If you have any questions about this Privacy Policy, your data, or wish to request manual data deletion, please reach out via our <Link href="/contact" style={{ fontWeight: 600, color: "var(--accent)" }}>Contact Form</Link>. 
+          You may also email us directly at <a href="mailto:methodflow@geodesia.online" style={{ fontWeight: 600, color: "var(--accent)" }}>methodflow@geodesia.online</a>.
+        </p>
       </main>
       <Footer />
     </>
