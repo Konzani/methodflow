@@ -56,29 +56,25 @@ export function toSVG(src:IR,theme:Theme="mono",font:Font="sans",paletteOverride
            `<text font-size="13" fill="${c.text}" text-anchor="middle">${L.map((l:string,i:number)=>`<tspan x="${n.x + n.w/2}" y="${y0+i*lh}">${esc(l)}</tspan>`).join("")}</text>`;
   }).join("");
 
-  // 5. Watermark
-  const wmPattern = watermark ? `
-    <pattern id="wm-pattern" width="400" height="400" patternUnits="userSpaceOnUse" patternTransform="rotate(-30)">
-      <text x="20" y="200" font-family="Georgia, serif" font-size="52" fill="#12161B" opacity="0.06" font-weight="600" letter-spacing="0.1em">METHODFLOW</text>
-    </pattern>
-  ` : "";
-
-  const wmRect = watermark ? `<rect width="100%" height="100%" fill="url(#wm-pattern)" />` : "";
-
-  const wmBadge = watermark ? `
-    <g transform="translate(${W - 130}, ${H - 35})">
-      <rect width="110" height="24" rx="12" fill="#F3F5F7" stroke="#D9DEE3" stroke-width="1"/>
-      <text x="55" y="16" font-family="Arial, sans-serif" font-size="10" fill="#66717C" text-anchor="middle" font-weight="700" letter-spacing="0.05em">MethodFlow</text>
+  // 5. The New Professional Watermark
+  const centerX = W / 2;
+  const centerY = H / 2;
+  const fontSize = Math.min(W, H) / 3.5; // Scales perfectly to the diagram size
+  
+  const watermarkSvg = watermark ? `
+    <g transform="translate(${centerX}, ${centerY}) rotate(-35)">
+      <text x="0" y="0" font-family="Georgia, serif" font-size="${fontSize}" fill="#12161B" opacity="0.06" font-weight="900" text-anchor="middle" dominant-baseline="central" letter-spacing="0.15em">MethodFlow</text>
     </g>
+    <text x="${W - 24}" y="${H - 16}" font-family="Arial, sans-serif" font-size="12" fill="#9ca3af" text-anchor="end" font-style="italic">Generated with MethodFlow (Free Tier)</text>
   ` : "";
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${ff}" role="img" aria-label="${esc(laidOut.meta.title)}">
     <defs>
       <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${ink}"/></marker>
-      ${wmPattern}
     </defs>
     <rect width="100%" height="100%" fill="${pal.canvas}"/>
-    ${wmRect}${groups}${edges}${nodes}${wmBadge}
+    ${watermarkSvg}
+    ${groups}${edges}${nodes}
   </svg>`;
 
   return { svg, w: W, h: H };
