@@ -52,7 +52,7 @@ export default function LoginPage() {
       
       {step === "email" ? (
         <>
-          <p>Enter your email to receive a secure 6-digit login code.</p>
+          <p style={{ color: "var(--graphite)" }}>Enter your email to receive a secure 6-digit login code.</p>
           
           <form onSubmit={handleSendEmail} style={{ display: "grid", gap: 12, marginTop: 24 }}>
             <label className="f">
@@ -61,16 +61,13 @@ export default function LoginPage() {
                 type="email" 
                 value={email} 
                 onChange={e => setEmail(e.target.value)} 
-                placeholder="you@gmail.com" 
+                placeholder="you@gmail.com or you@university.edu" 
                 required 
               />
             </label>
             <button className="pri" type="submit" disabled={loading}>
               {loading ? "Sending..." : "Send Login Code"}
             </button>
-            <p className="note" style={{ fontSize: 11, textAlign: 'center' }}>
-              Any email works: Gmail, Yahoo, university, etc.
-            </p>
           </form>
         </>
       ) : (
