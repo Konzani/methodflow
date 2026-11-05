@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Header, Footer } from "@/components/Chrome";
+import Link from "next/link";
 
 export const metadata: Metadata = { 
   title: "Privacy Policy", 
@@ -12,7 +13,7 @@ export default function Privacy() {
       <Header />
       <main className="wrap page" style={{ maxWidth: 800 }}>
         <h1>Privacy Policy</h1>
-        <p>Last updated: October 2026</p>
+        <p>Last updated: {new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</p>
 
         <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>1. Overview</h2>
         <p>MethodFlow ("we", "us", or "our") is committed to protecting your privacy. This policy explains how we collect, use, and safeguard your information when you use our website and services.</p>
@@ -27,15 +28,15 @@ export default function Privacy() {
         <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>3. How We Use Your Information</h2>
         <ul style={{ color: "var(--graphite)", lineHeight: 1.6, paddingLeft: 20 }}>
           <li style={{ marginBottom: 8 }}>To provide, maintain, and secure our services.</li>
-          <li style={{ marginBottom: 8 }}>To process your prompts and generate flowchart diagrams (your prompts are processed securely by our AI partners and are not used to train public models).</li>
+          <li style={{ marginBottom: 8 }}>To process your prompts and generate flowchart diagrams. Your prompts are processed securely by our AI partners and are <strong>not</strong> used to train public models.</li>
           <li style={{ marginBottom: 8 }}>To communicate with you regarding support or account updates.</li>
         </ul>
 
         <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>4. Third-Party Service Providers</h2>
-        <p>We do not sell your personal data. We use trusted third-party service providers to host our infrastructure, manage authentication, process AI requests, and deliver emails. These providers are bound by strict data processing agreements and only access the data necessary to perform their specific functions.</p>
+        <p>We do not sell your personal data. We use trusted third-party service providers to host our infrastructure, manage authentication, process AI requests, and handle payment processing. These providers are bound by strict data processing agreements and only access the data necessary to perform their specific functions.</p>
 
         <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>5. Data Retention & Deletion</h2>
-        <p>You have full control over your data. You can delete your saved cloud diagrams at any time from your dashboard. If you wish to permanently delete your account and all associated data, you may contact us directly. Shared links are stored temporarily and are subject to automatic expiration.</p>
+        <p>You have full control over your data. You can delete individual cloud diagrams at any time from your dashboard. Additionally, you can permanently delete your account and all associated data directly from the <strong>Danger Zone</strong> in your dashboard settings. Once deleted, this data cannot be recovered. Shared links are stored temporarily and are subject to automatic expiration.</p>
 
         <h2 style={{ fontSize: 22, margin: "28px 0 8px" }}>6. Cookies</h2>
         <p>We use strictly necessary cookies to keep you logged in and secure your session. We may also use privacy-friendly analytics cookies to measure site traffic. We do not use third-party advertising or tracking cookies.</p>
