@@ -50,11 +50,12 @@ export function computeFit(
   svgUnitsW: number,
   svgUnitsH: number,
   page: PageSettings,
+  reserveMM = 0,
 ): { scale: number; pxW: number; pxH: number; mmW: number; mmH: number; overflow: boolean } {
   const pageMM = pageSizeMM(page);
   const contentMM = {
     w: pageMM.w - 2 * page.margin,
-    h: pageMM.h - 2 * page.margin,
+    h: pageMM.h - 2 * page.margin - reserveMM,
   };
   const svgMMW = svgUnitsW * 25.4 / 96;
   const svgMMH = svgUnitsH * 25.4 / 96;

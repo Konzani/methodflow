@@ -1,7 +1,8 @@
 import { z } from "zod";
 export const SHAPES = ["process", "decision", "terminator", "data", "document", "database"] as const;
 export const METHODS = ["quantitative", "qualitative", "mixed", "prisma", "consort", "dsr", "survey", "experimental", "custom"] as const;
-export const DENSITIES = ["compact", "balanced", "spacious"] as const;
+export const REQUEST_METHODS = ["auto", ...METHODS] as const;
+export const DENSITIES =["compact", "balanced", "spacious"] as const;
 export const PALETTE_IDS = ["mono", "grayscale", "tint", "okabe-ito", "pastel", "bold"] as const;
 export const FLOW_DIRECTIONS = ["auto", "tb", "lr"] as const;
 
@@ -19,6 +20,7 @@ export const NodeS = z.object({
   y: coord,
   w: coord,
   h: coord,
+  pinned: z.boolean().optional(),
   fill: hex.optional(),
   stroke: hex.optional(),
   text: hex.optional(),
@@ -64,6 +66,7 @@ export type N = IR["nodes"][number];
 export type E = IR["edges"][number];
 export type Shape = (typeof SHAPES)[number];
 export type Method = (typeof METHODS)[number];
+export type RequestMethod = (typeof REQUEST_METHODS)[number];
 export type Density = (typeof DENSITIES)[number];
 export type PaletteId = (typeof PALETTE_IDS)[number];
 export type FlowDirection = (typeof FLOW_DIRECTIONS)[number];

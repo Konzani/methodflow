@@ -1,7 +1,7 @@
 import "server-only";
-import { IRSchema, METHODS, type IR, type Method } from "./core/ir";
+import { IRSchema, METHODS, type IR, type Method, type RequestMethod } from "./core/ir";
 import { sanitizeIR, validateGraph } from "./core/validate";
-import { fixTopology } from "./core/postprocess";
+import { fixTopology, labelDecisionBranches } from "./core/postprocess";
 import { layout } from "./core/layout";
 import {
   systemPrompt,
@@ -12,73 +12,23 @@ import {
   UNDERSTAND_SYSTEM,
   understandMsg,
 } from "./core/prompt";
-import { qualityIssues } from "./core/quality";
+import { qualityIssues, numberFidelity } from "./core/quality";
 import { focusMethodology } from "./core/extract";
 import { fallbackFor } from "./templates";
+import { attempts, legacyModelEnv, requestBody, type Attempt } from "./models";
 
 type Msg = { role: "system" | "user" | "assistant"; content: string };
-
-/** One concrete (provider, model) the pipeline can call. */
-type Attempt = {
-  id: string; // "provider:model" - the circuit breaker is keyed on this, NOT on the provider
-  provider: "deepseek" | "openai";
-  url: string;
-  key: string;
-  model: string;
-  thinking: boolean; // reasoning model: no temperature/top_p, needs a much bigger token budget
-  maxTokens: number;
-  timeoutMs: number;
-};
 
 type CallResult = { text: string; finish: string; tin: number; tout: number };
 
 export type Gen = { ir: IR; source: "ai" | "template"; warnings: string[]; cost: number; provider?: string };
 
-const DS_URL = "https://api.deepseek.com/chat/completions";
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
-const MIN_CALL_MS = 6_000; // don't start a call with less than this left on the clock
+const MIN_CALL_MS = 6_000;
 
-const num = (v: string | undefined, d: number) => {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : d;
-};
-
-/* ------------------------------------------------------------------ */
-/* 1. MODEL LADDER                                                     */
-/*    deep (Pro):  reasoner -> fast model -> OpenAI                    */
-/*    fast (Free): fast model -> OpenAI                                */
-/* ------------------------------------------------------------------ */
-function attempts(deep: boolean): Attempt[] {
-  const dsKey = process.env.DEEPSEEK_API_KEY || "";
-  // NOTE: check these names against GET https://api.deepseek.com/models - DeepSeek has been
-  // renaming/retiring aliases. Override via env; nothing below depends on the literal names.
-  const fast = process.env.DEEPSEEK_MODEL || "deepseek-chat";
-  const think = process.env.DEEPSEEK_REASONER_MODEL || "deepseek-reasoner";
-  const oai = process.env.OPENAI_MODEL || "";
-
-  const list: Attempt[] = [];
-  if (deep && think !== fast) {
-    list.push({
-      id: `deepseek:${think}`,
-      provider: "deepseek",
-      url: DS_URL,
-      key: dsKey,
-      model: think,
-      thinking: true,
-      // Reasoning models spend tokens thinking before they write the JSON. 2500 was far too small.
-      maxTokens: num(process.env.DEEPSEEK_REASONER_MAX_TOKENS, 12000),
-      timeoutMs: 90_000,
-    });
-  }
-  list.push({ id: `deepseek:${fast}`, provider: "deepseek", url: DS_URL, key: dsKey, model: fast, thinking: false, maxTokens: 3500, timeoutMs: 40_000 });
-  list.push({ id: `openai:${oai}`, provider: "openai", url: OPENAI_URL, key: process.env.OPENAI_API_KEY || "", model: oai, thinking: false, maxTokens: 3500, timeoutMs: 40_000 });
-  return list.filter((a) => a.key && a.model);
+for (const name of legacyModelEnv()) {
+  console.error(`[llm] ${name} holds a retired DeepSeek model name; it is remapped to the current default. Update the environment variable.`);
 }
 
-/* ------------------------------------------------------------------ */
-/* 2. CIRCUIT BREAKER (per provider:model)                             */
-/*    A slow reasoner can no longer lock the free-tier model out.      */
-/* ------------------------------------------------------------------ */
 const brk = new Map<string, { f: number; until: number }>();
 const tripped = (id: string) => (brk.get(id)?.until ?? 0) > Date.now();
 const fail = (id: string, weight = 1) => {
@@ -105,47 +55,25 @@ class ApiError extends Error {
 function noteFailure(a: Attempt, e: unknown) {
   const err = e as { name?: string; message?: string };
   const status = e instanceof ApiError ? e.status : 0;
-  // Previously failures were swallowed. A dead key, empty balance (402) or retired model (404)
-  // looked identical to "AI is unavailable". Now it is in your logs.
   console.error(`[llm] ${a.id} failed:`, status || err?.name, e instanceof ApiError ? e.body : err?.message);
-  // auth / balance / model-not-found will not fix themselves in five minutes: trip immediately
   fail(a.id, [401, 402, 403, 404].includes(status) ? 5 : 1);
 }
 
-/* ------------------------------------------------------------------ */
-/* 3. API CALLER                                                       */
-/* ------------------------------------------------------------------ */
 async function call(a: Attempt, msgs: Msg[], timeoutMs: number): Promise<CallResult> {
   const c = new AbortController();
   const t = setTimeout(() => c.abort(), Math.max(1_000, timeoutMs));
-
-  const body: Record<string, unknown> = {
-    model: a.model,
-    messages: msgs,
-    response_format: { type: "json_object" },
-  };
-  if (a.provider === "openai") body.max_completion_tokens = a.maxTokens;
-  else body.max_tokens = a.maxTokens;
-
-  // Reasoning models ignore (DeepSeek) or reject (OpenAI o-series / gpt-5) sampling parameters.
-  const openaiReasoner = a.provider === "openai" && /^(o\d|gpt-5)/i.test(a.model);
-  if (!a.thinking && !openaiReasoner) {
-    body.temperature = 0.2;
-    body.top_p = 0.9;
-  }
-
   try {
     const r = await fetch(a.url, {
       method: "POST",
       signal: c.signal,
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + a.key },
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody(a, msgs)),
     });
     if (!r.ok) throw new ApiError(a.id, r.status, (await r.text().catch(() => "")).slice(0, 300));
     const j = await r.json();
     const ch = j.choices?.[0];
     return {
-      text: String(ch?.message?.content ?? ""), // reasoning_content is intentionally never sent back
+      text: String(ch?.message?.content ?? ""),
       finish: String(ch?.finish_reason ?? ""),
       tin: Number(j.usage?.prompt_tokens ?? 0),
       tout: Number(j.usage?.completion_tokens ?? 0),
@@ -155,18 +83,18 @@ async function call(a: Attempt, msgs: Msg[], timeoutMs: number): Promise<CallRes
   }
 }
 
-// Per-model pricing: PRICE_IN_PER_M_DEEP / _OPENAI override the shared PRICE_IN_PER_M (same for OUT)
+let priceWarned = false;
 function costOf(a: Attempt, r: CallResult) {
   const sfx = a.thinking ? "_DEEP" : a.provider === "openai" ? "_OPENAI" : "";
+  if (sfx === "_DEEP" && process.env.PRICE_IN_PER_M_DEEP === undefined && !priceWarned) {
+    priceWarned = true;
+    console.error("[llm] PRICE_IN_PER_M_DEEP / PRICE_OUT_PER_M_DEEP are not set: deep-model spend is estimated with the fast-model prices and the daily budget guard will under-count.");
+  }
   const pin = Number(process.env["PRICE_IN_PER_M" + sfx] ?? process.env.PRICE_IN_PER_M ?? 0);
   const pout = Number(process.env["PRICE_OUT_PER_M" + sfx] ?? process.env.PRICE_OUT_PER_M ?? 0);
   return (r.tin * pin + r.tout * pout) / 1e6;
 }
 
-/* ------------------------------------------------------------------ */
-/* 4. PARSER                                                           */
-/* ------------------------------------------------------------------ */
-// Tolerates code fences and stray prose around the object (reasoning models do this).
 function jsonOf(t: string): unknown {
   const s = t.indexOf("{");
   const e = t.lastIndexOf("}");
@@ -183,23 +111,17 @@ function parse(t: string): { ir?: IR; issues: string[] } {
   if (j === null) return { issues: ["Output was not valid JSON."] };
   const r = IRSchema.safeParse(j);
   if (!r.success) return { issues: r.error.issues.slice(0, 6).map((i) => i.path.join(".") + ": " + i.message) };
-  const ir = sanitizeIR(r.data);
+  const ir = labelDecisionBranches(sanitizeIR(r.data));
   return { ir, issues: validateGraph(ir, true) };
 }
 
-/* ------------------------------------------------------------------ */
-/* 5. SOLVER - shared by generate() and refine()                       */
-/*    hard issues  -> repair round (max 1)                             */
-/*    soft issues  -> ONE polish round, kept only if it is strictly    */
-/*                    better and still valid (Pro only)                */
-/* ------------------------------------------------------------------ */
 type SolveOpts = {
   deep: boolean;
   system: string;
   user: string;
-  deadline: number; // epoch ms; every call is budgeted against this
-  soft?: (ir: IR) => string[]; // quality rubric (optional)
-  guard?: (ir: IR) => string[]; // extra HARD checks (optional)
+  deadline: number;
+  soft?: (ir: IR) => string[];
+  guard?: (ir: IR) => string[];
 };
 
 async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: string; tried: boolean }> {
@@ -221,7 +143,6 @@ async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: 
       for (;;) {
         const remaining = o.deadline - Date.now();
         if (remaining < MIN_CALL_MS) break;
-        // The reasoner may use at most 60% of what is left, so the fast model still has time to run.
         const timeout = Math.min(a.timeoutMs, a.thinking ? remaining * 0.6 : remaining - 1_000);
 
         tried = true;
@@ -242,12 +163,12 @@ async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: 
           continue;
         }
 
-        if (good || ++repairs >= 2) break; // polish broke it, or repair already failed: stop here
+        if (good || ++repairs >= 2) break;
         msgs.push({ role: "assistant", content: r.text }, { role: "user", content: repairMsg(issues) });
       }
     } catch (e) {
       if (!good) noteFailure(a, e);
-      else console.warn(`[llm] ${a.id} polish pass failed, keeping the valid draft`);
+      else console.error(`[llm] ${a.id} polish pass failed, keeping the valid draft`);
     }
 
     if (good) return { ir: layout(fixTopology(good.ir)), cost, provider: a.provider, tried };
@@ -255,11 +176,10 @@ async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: 
   return { cost, tried };
 }
 
-/* ------------------------------------------------------------------ */
-/* 6. GENERATE                                                         */
-/* ------------------------------------------------------------------ */
+const list = (xs: string[]) => xs.slice(0, 6).join(", ");
+
 export async function generate(a: {
-  method: Method;
+  method: RequestMethod;
   text: string;
   extra: string;
   warnings: string[];
@@ -270,19 +190,27 @@ export async function generate(a: {
   const deadline = a.deadline ?? Date.now() + (isPro ? 105_000 : 40_000);
   const w = [...a.warnings];
   const rich = a.text.trim().length > 400;
+  const source = `${a.text}\n${a.extra}`;
+  const methodOf = (ir: IR): string => (a.method === "auto" ? ir.meta.methodology : a.method);
 
   const r = await solve({
     deep: isPro,
     deadline,
     system: systemPrompt(isPro),
     user: userMsg(a.method, a.text, a.extra),
-    // Self-improvement pass is a Pro feature (costs one extra call only when the rubric finds problems)
-    soft: isPro ? (ir) => qualityIssues(ir, { method: a.method, rich }) : undefined,
+    soft: isPro ? (ir) => qualityIssues(ir, { method: methodOf(ir), rich, source }) : undefined,
   });
 
-  if (r.ir) return { ir: r.ir, source: "ai", warnings: w, cost: r.cost, provider: r.provider };
+  if (r.ir) {
+    if (a.text.trim().length >= 40) {
+      const f = numberFidelity(r.ir, source);
+      if (f.invented.length) w.push(`Numbers in the diagram that are not in your text: ${list(f.invented)}. Remove them unless you added them yourself.`);
+      if (f.missing.length) w.push(`Numbers from your text that are not in the diagram: ${list(f.missing)}. Add them to the relevant step.`);
+    }
+    return { ir: r.ir, source: "ai", warnings: w, cost: r.cost, provider: r.provider };
+  }
   return {
-    ir: fallbackFor(a.method),
+    ir: fallbackFor(a.method === "auto" ? "custom" : a.method),
     source: "template",
     warnings: [
       ...w,
@@ -294,17 +222,12 @@ export async function generate(a: {
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* 7. DOCUMENT PIPELINE (uploads and long Pro text)                    */
-/*    focus on the methodology section -> condense to a faithful brief */
-/*    (cheap model) -> generate from the brief (best model)            */
-/* ------------------------------------------------------------------ */
 async function understand(a: { text: string; deadline: number }): Promise<{ method: Method | null; brief: string | null; cost: number }> {
   let cost = 0;
   for (const at of attempts(false)) {
     if (tripped(at.id)) continue;
     const remaining = a.deadline - Date.now();
-    if (remaining < 25_000) break; // keep the clock for the generation step
+    if (remaining < 25_000) break;
     try {
       const r = await call(
         at,
@@ -333,7 +256,7 @@ async function understand(a: { text: string; deadline: number }): Promise<{ meth
 export async function generateFromDocument(a: {
   text: string;
   isPro: boolean;
-  method?: Method; // omit to auto-detect
+  method?: RequestMethod;
   extra?: string;
   warnings: string[];
   deadline?: number;
@@ -348,9 +271,10 @@ export async function generateFromDocument(a: {
   }
 
   const u = await understand({ text: focus.text, deadline });
+  const explicit = a.method && a.method !== "auto" ? a.method : null;
   const g = await generate({
-    method: a.method ?? u.method ?? "custom",
-    text: u.brief ?? focus.text, // if condensing failed, fall back to the focused raw text
+    method: explicit ?? u.method ?? "custom",
+    text: u.brief ?? focus.text,
     extra: a.extra ?? "Generated from uploaded document.",
     warnings: w,
     isPro: a.isPro,
@@ -359,12 +283,6 @@ export async function generateFromDocument(a: {
   return { ...g, cost: g.cost + u.cost };
 }
 
-/* ------------------------------------------------------------------ */
-/* 8. REFINE                                                           */
-/*    Fast model by default (interactive edits shouldn't take a        */
-/*    minute); pass deep: true to let Pro use the reasoner.            */
-/*    Guard: reject rewrites that silently delete existing nodes.      */
-/* ------------------------------------------------------------------ */
 function preservationGuard(before: IR, instruction: string) {
   const removalIntent = /\b(remov\w*|delet\w*|drop|simplif\w*|merg\w*|combin\w*|condens\w*|shorten|reduc\w*|trim|cut|replace|rewrite|restructur\w*|start over|redo)\b/i.test(instruction);
   const ids = before.nodes.map((n) => n.id);
@@ -378,12 +296,13 @@ function preservationGuard(before: IR, instruction: string) {
   };
 }
 
+const LAYOUT_KEYS = new Set(["x", "y", "w", "h", "points", "labelPos", "canvas", "pinned"]);
+
 export async function refine(a: { ir: IR; instruction: string; isPro?: boolean; deep?: boolean; deadline?: number }): Promise<Gen> {
   const deep = !!(a.isPro && a.deep);
   const deadline = a.deadline ?? Date.now() + (deep ? 105_000 : 40_000);
 
-  // Strip layout coordinates (if your layout writes them onto the IR): they bloat the prompt and tempt the model to edit them.
-  const currentJson = JSON.stringify(a.ir, (k, v) => (k === "x" || k === "y" ? undefined : v));
+  const currentJson = JSON.stringify(a.ir, (k, v) => (LAYOUT_KEYS.has(k) ? undefined : v));
   const instruction = a.instruction.replace(/<\/?\s*instruction\s*>/gi, "");
 
   const r = await solve({

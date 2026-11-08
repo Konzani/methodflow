@@ -4,7 +4,7 @@ export function sanitizeIR(ir:IR):IR{const seen=new Set<string>();const nodes=ir
 export function validateGraph(ir:IR,strict=false):string[]{const o:string[]=[];const ids=new Set(ir.nodes.map(n=>n.id));
 if(ids.size!==ir.nodes.length)o.push("Duplicate node ids.");
 ir.edges.forEach(e=>{if(!ids.has(e.source)||!ids.has(e.target))o.push("An edge points to a missing node.")});
-for(const n of ir.nodes.filter(n=>n.shape==="decision")){const out=ir.edges.filter(e=>e.source===n.id);if(out.length<2)o.push(`Decision "${n.label}" needs at least two branches.`);else if(out.some(e=>!e.label))o.push(`Decision "${n.label}" has an unlabelled branch.`)}
+for(const n of ir.nodes.filter(n=>n.shape==="decision")){const out=ir.edges.filter(e=>e.source===n.id);if(out.length<2)o.push(`Decision "${n.label}" needs two branches.`);else if(out.length>2)o.push(`Decision "${n.label}" has ${out.length} branches; use exactly two (a binary sequence of gates, or a process step that classifies the outcomes).`);else if(out.some(e=>!e.label))o.push(`Decision "${n.label}" has an unlabelled branch.`);else if(out[0].target===out[1].target)o.push(`Decision "${n.label}" sends both branches to the same step.`)}
 if(ir.nodes.length>1){const c=new Set(ir.edges.flatMap(e=>[e.source,e.target]));ir.nodes.forEach(n=>{if(!c.has(n.id))o.push(`"${n.label}" is not connected.`)})}
 if(strict){if(ir.nodes.length<4)o.push("Too few nodes.");if(!ir.nodes.some(n=>n.shape==="terminator")&&!["prisma","consort"].includes(ir.meta.methodology))o.push("Missing start/end terminators.")}
 return[...new Set(o)]}

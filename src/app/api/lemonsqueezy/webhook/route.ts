@@ -1,67 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { LIFECYCLE_EVENTS, planFor } from "@/lib/billing";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET!;
-  const rawBody = await req.text();
-  const hmac = crypto.createHmac("sha256", secret);
-  const digest = Buffer.from(hmac.update(rawBody).digest("hex"), "utf8");
-  const signature = Buffer.from(req.headers.get("X-Signature") as string, "utf8");
+  const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret || !url || !key) return NextResponse.json({ error: "Not configured" }, { status: 500 });
 
-  if (!signature || digest.length !== signature.length || !crypto.timingSafeEqual(digest, signature)) {
+  const rawBody = await req.text();
+  const header = req.headers.get("x-signature");
+  if (!header) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+
+  const digest = Buffer.from(crypto.createHmac("sha256", secret).update(rawBody).digest("hex"), "utf8");
+  const signature = Buffer.from(header, "utf8");
+  if (digest.length !== signature.length || !crypto.timingSafeEqual(digest, signature)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  const payload = JSON.parse(rawBody);
-  const eventName = payload.meta.event_name;
-  const attributes = payload.data.attributes;
-  const userId = payload.meta.custom_data?.user_id;
-
-  if (!userId) {
-    return NextResponse.json({ error: "No user ID" }, { status: 400 });
+  let payload: any;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: "Bad payload" }, { status: 400 });
   }
 
-  // CRITICAL FIX: Ignore events that aren't about the subscription lifecycle
-  if (
-    eventName !== "subscription_created" && 
-    eventName !== "subscription_updated" && 
-    eventName !== "subscription_cancelled" && 
-    eventName !== "subscription_resumed" &&
-    eventName !== "subscription_expired"
-  ) {
-    // If it's an order receipt or payment success, just acknowledge it and do nothing.
-    return NextResponse.json({ received: true, ignored: true });
-  }
+  const eventName: string | undefined = payload?.meta?.event_name;
+  const attributes = payload?.data?.attributes;
+  const userId: string | undefined = payload?.meta?.custom_data?.user_id;
 
-  // Map the Lemon Squeezy status directly to your app's plan
-  let plan = "free";
-  if (
-    attributes.status === "active" || 
-    attributes.status === "on_trial" || 
-    attributes.status === "paid"
-  ) {
-    plan = "pro";
-  }
+  if (!eventName || !LIFECYCLE_EVENTS.has(eventName)) return NextResponse.json({ received: true, ignored: true });
+  if (!userId || !attributes) return NextResponse.json({ error: "No user ID" }, { status: 400 });
 
-  // Update the database
-  const { error } = await supabaseAdmin
+  const plan = eventName === "subscription_expired" ? "free" : planFor(attributes.status, attributes.ends_at, Date.now());
+
+  const admin = createClient(url, key);
+  const { data, error } = await admin
     .from("profiles")
-    .update({ 
-      plan: plan,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", userId);
+    .update({ plan, updated_at: new Date().toISOString() })
+    .eq("id", userId)
+    .select("id");
 
   if (error) {
     console.error("Supabase update error:", error);
     return NextResponse.json({ error: "Database update failed" }, { status: 500 });
   }
+  if (!data || data.length === 0) {
+    console.error("Webhook matched no profile for user", userId);
+    return NextResponse.json({ error: "Profile not found" }, { status: 500 });
+  }
 
-  return NextResponse.json({ received: true });
+  return NextResponse.json({ received: true, plan });
 }

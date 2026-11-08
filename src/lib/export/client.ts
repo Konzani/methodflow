@@ -1,6 +1,7 @@
 "use client";
 import type { IR } from "@/lib/core/ir";
 import { toSVG } from "./svg";
+import { captionOf, figureCaption } from "./caption";
 import { computeFit, pageSizeMM, type PageSettings } from "./page";
 
 export const slug = (s: string) =>
@@ -75,9 +76,11 @@ export async function toPng(ir: IR, page: PageSettings, watermark = false) {
   return { blob, ...fit, w, h };
 }
 
+const CAPTION_MM = 14;
+
 export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
   const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
-  const fit = computeFit(w, h, page);
+  const fit = computeFit(w, h, page, CAPTION_MM);
   
   const { jsPDF } = await import("jspdf");
   const { svg2pdf } = await import("svg2pdf.js");
@@ -102,7 +105,8 @@ export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
   }
 
   const x = (dims.w - fit.mmW) / 2;
-  const y = (dims.h - fit.mmH) / 2 - 4;
+  const blockH = fit.mmH + CAPTION_MM;
+  const y = Math.max(page.margin, (dims.h - blockH) / 2);
 
   await svg2pdf(svgElement, doc, {
     x: x,
@@ -111,13 +115,12 @@ export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
     height: fit.mmH,
   });
 
-  const caption = ir.meta.caption || ir.meta.title;
+  const caption = figureCaption(ir);
   if (caption) {
+    doc.setFont(page.font === "serif" ? "times" : "helvetica", "normal");
     doc.setFontSize(10);
-    doc.text(caption, dims.w / 2, dims.h - page.margin + 2, {
-      align: "center",
-      maxWidth: dims.w - 2 * page.margin,
-    });
+    const lines = doc.splitTextToSize(caption, dims.w - 2 * page.margin) as string[];
+    doc.text(lines.slice(0, 3), dims.w / 2, y + fit.mmH + 6, { align: "center" });
   }
 
   document.body.removeChild(container);
@@ -130,7 +133,7 @@ export async function toDocx(ir: IR, page: PageSettings, watermark = false) {
   const fit = computeFit(w, h, page);
   const png = await svgToPngBlob(svg, fit.pxW, fit.pxH);
   const {
-    Document, Packer, Paragraph, TextRun, ImageRun,
+    Document, Packer, Paragraph, TextRun, ImageRun, SimpleField,
     AlignmentType, convertMillimetersToTwip,
   } = await import("docx");
 
@@ -139,20 +142,21 @@ export async function toDocx(ir: IR, page: PageSettings, watermark = false) {
 
   const contentWidthPx = (dims.w - 2 * page.margin) * 3.7795; 
   const contentHeightPx = (dims.h - 2 * page.margin) * 3.7795;
-  const scale = Math.min(contentWidthPx / w, contentHeightPx / h, 1.5);
+  const scale = Math.min(contentWidthPx / w, (contentHeightPx - 60) / h, 1.5);
   const finalW = Math.round(w * scale);
   const finalH = Math.round(h * scale);
 
-  const caption = ir.meta.caption || ir.meta.title;
+  const caption = captionOf(ir);
   const children: any[] = [
     new Paragraph({
       alignment: AlignmentType.CENTER,
+      keepNext: true,
       children: [
         new ImageRun({
           type: "png",
           data,
           transformation: { width: finalW, height: finalH },
-          altText: { name: "figure", title: ir.meta.title, description: ir.meta.title },
+          altText: { name: "figure", title: ir.meta.title, description: caption || ir.meta.title },
         }),
       ],
     }),
@@ -161,8 +165,13 @@ export async function toDocx(ir: IR, page: PageSettings, watermark = false) {
   if (caption) {
     children.push(
       new Paragraph({
+        style: "Caption",
         alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: caption, italics: true, size: 20 })],
+        children: [
+          new TextRun({ text: "Figure ", bold: true }),
+          new SimpleField("SEQ Figure \\* ARABIC", "1"),
+          new TextRun({ text: ". " + caption }),
+        ],
       })
     );
   }
@@ -170,6 +179,19 @@ export async function toDocx(ir: IR, page: PageSettings, watermark = false) {
   const doc = new Document({
     creator: "MethodFlow",
     title: ir.meta.title,
+    styles: {
+      paragraphStyles: [
+        {
+          id: "Caption",
+          name: "Caption",
+          basedOn: "Normal",
+          next: "Normal",
+          quickFormat: true,
+          run: { italics: false, size: 20, color: "000000" },
+          paragraph: { spacing: { before: 120, after: 240 } },
+        },
+      ],
+    },
     sections: [
       {
         properties: {

@@ -12,6 +12,10 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getSmoothStepPath,
+  type EdgeProps,
   ViewportPortal,
   type Node,
   type Edge,
@@ -20,16 +24,19 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   IRSchema,
-  METHODS,
+  REQUEST_METHODS,
   SHAPES,
   DENSITIES,
   type Method,
+  type RequestMethod,
   type Shape,
   type Density,
   type PaletteId,
   type FlowDirection,
 } from "@/lib/core/ir";
 import { validateGraph } from "@/lib/core/validate";
+import { layout } from "@/lib/core/layout";
+import { withStyle } from "@/lib/core/style";
 import { TEMPLATES, getTemplate } from "@/lib/templates";
 import { loadDraft, parseIR, saveDraft } from "@/lib/persist";
 import { toSVG, type Theme } from "@/lib/export/svg";
@@ -57,6 +64,7 @@ const ML: Record<Method, string> = {
   experimental: "Experimental",
   custom: "Other",
 };
+const RL: Record<RequestMethod, string> = { auto: "Auto-detect (recommended)", ...ML };
 const SL: Record<Shape, string> = {
   process: "Step",
   decision: "Decision",
@@ -120,6 +128,58 @@ function MFNode({ data, selected }: NodeProps<Node<D>>) {
 }
 const nodeTypes = { mf: MFNode };
 
+type PtEdge = { points?: { x: number; y: number }[]; labelPos?: { x: number; y: number; anchor: string } };
+function MFEdge(p: EdgeProps) {
+  const d = (p.data ?? {}) as PtEdge;
+  const pts = d.points;
+  let path: string;
+  let lx = (p.sourceX + p.targetX) / 2;
+  let ly = (p.sourceY + p.targetY) / 2;
+  if (pts && pts.length >= 2) {
+    path = pts.map((q, i) => (i === 0 ? "M" : "L") + q.x + "," + q.y).join(" ");
+    if (d.labelPos) {
+      lx = d.labelPos.x + (d.labelPos.anchor === "start" ? 12 : d.labelPos.anchor === "end" ? -12 : 0);
+      ly = d.labelPos.y - 4;
+    }
+  } else {
+    const r = getSmoothStepPath({
+      sourceX: p.sourceX,
+      sourceY: p.sourceY,
+      sourcePosition: p.sourcePosition,
+      targetX: p.targetX,
+      targetY: p.targetY,
+      targetPosition: p.targetPosition,
+    });
+    path = r[0];
+    lx = r[1];
+    ly = r[2];
+  }
+  return (
+    <>
+      <BaseEdge id={p.id} path={path} markerEnd={p.markerEnd} style={p.style} interactionWidth={16} />
+      {p.label ? (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan"
+            style={{
+              position: "absolute",
+              transform: `translate(-50%,-50%) translate(${lx}px,${ly}px)`,
+              fontSize: 11,
+              background: "#fff",
+              padding: "0 3px",
+              borderRadius: 2,
+              pointerEvents: "none",
+            }}
+          >
+            {p.label}
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
+  );
+}
+const edgeTypes = { mf: MFEdge };
+
 function Modal({ title, text, onClose }: { title: string; text: string; onClose: () => void }) {
   const [c, setC] = useState(false);
   useEffect(() => {
@@ -160,7 +220,7 @@ function Inner() {
   const [status, setStatus] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  const [method, setMethod] = useState<Method>("quantitative");
+  const [method, setMethod] = useState<RequestMethod>("auto");
   const [text, setText] = useState("");
   const [extra, setExtra] = useState("");
   const [refineText, setRefineText] = useState("");
@@ -177,6 +237,12 @@ function Inner() {
   const [cloudId, setCloudId] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [plan, setPlan] = useState<"free" | "pro">("free");
+  const planRef = useRef<"free" | "pro">("free");
+  const planReady = useRef<Promise<void>>(Promise.resolve());
+  const applyPlan = (p: "free" | "pro") => {
+    planRef.current = p;
+    setPlan(p);
+  };
 
   // Thinking overlay state
   const [genStage, setGenStage] = useState("");
@@ -299,14 +365,20 @@ function Inner() {
 
   useEffect(() => {
     const supabase = createClient();
+    let done: () => void = () => {};
+    planReady.current = new Promise<void>((r) => (done = r));
     const fetchUserAndPlan = async () => {
+      try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
       setUser(user);
       if (user) {
         const { data: profile } = await supabase.from("profiles").select("plan").eq("id", user.id).single();
-        if (profile) setPlan(profile.plan as "free" | "pro");
+        if (profile) applyPlan(profile.plan as "free" | "pro");
+      }
+      } finally {
+        done();
       }
     };
     fetchUserAndPlan();
@@ -319,10 +391,10 @@ function Inner() {
           .eq("id", session.user.id)
           .single()
           .then(({ data }) => {
-            if (data) setPlan(data.plan as "free" | "pro");
+            if (data) applyPlan(data.plan as "free" | "pro");
           });
       } else {
-        setPlan("free");
+        applyPlan("free");
       }
     });
     return () => authListener.subscription.unsubscribe();
@@ -390,7 +462,8 @@ function Inner() {
         source: e.source,
         target: e.target,
         label: e.label,
-        type: "smoothstep",
+        type: "mf",
+        data: { points: (e as any).points, labelPos: (e as any).labelPos },
         selected: sel?.k === "e" && sel.id === e.id,
         style: { stroke: pal.ink, strokeWidth: 1.4, strokeDasharray: e.dashed ? "6 4" : undefined },
         markerEnd: { type: MarkerType.ArrowClosed, color: pal.ink },
@@ -525,9 +598,10 @@ function Inner() {
           setMsg("The result was not valid. Your diagram is unchanged.");
         } else {
           const g = useDiagram.getState();
-          g.commit(p.data);
+          g.commit(layout(withStyle(p.data, g.ir.meta)));
           useDiagram.setState((x) => ({ rev: x.rev + 1 }));
-          setMsg((j.warnings as string[] | undefined)?.join(" ") || "Draft ready. Check every step against your own method.");
+          const detected = method === "auto" || p.data.meta.methodology !== method ? `Detected design: ${ML[p.data.meta.methodology as Method] ?? p.data.meta.methodology}. ` : "";
+          setMsg(detected + ((j.warnings as string[] | undefined)?.join(" ") || "Draft ready. Check every step against your own method."));
           setPanel(null);
           ok = true;
         }
@@ -569,9 +643,9 @@ function Inner() {
           setMsg("The result was not valid.");
         } else {
           const g = useDiagram.getState();
-          g.commit(p.data);
+          g.commit(layout(withStyle(p.data, g.ir.meta)));
           useDiagram.setState((x) => ({ rev: x.rev + 1 }));
-          setMsg("Draft ready from uploaded document.");
+          setMsg(`Draft ready from uploaded document. Detected design: ${ML[p.data.meta.methodology as Method] ?? p.data.meta.methodology}.`);
           setPanel(null);
           ok = true;
         }
@@ -603,11 +677,13 @@ function Inner() {
         setMsg(j.message || "Refine failed.");
       } else {
         const p = IRSchema.safeParse(j.ir);
-        if (!p.success) {
+        if (j.source === "template") {
+          setMsg("The edit could not be applied, so your diagram is unchanged. Try rephrasing the instruction.");
+        } else if (!p.success) {
           setMsg("The result was not valid. Your diagram is unchanged.");
         } else {
           const g = useDiagram.getState();
-          g.commit(p.data);
+          g.commit(layout(withStyle(p.data, g.ir.meta)));
           useDiagram.setState((x) => ({ rev: x.rev + 1 }));
           setMsg("Refined successfully.");
           setRefineText("");
@@ -622,7 +698,9 @@ function Inner() {
   }
 
   async function exp(k: string) {
-    if ((k === "docx" || k === "tikz") && plan === "free") {
+    await planReady.current;
+    const free = planRef.current === "free";
+    if ((k === "docx" || k === "tikz") && free) {
       setMenu(false);
       openUpgrade("feature");
       return;
@@ -633,15 +711,15 @@ function Inner() {
     setMsg("");
     try {
       if (k === "svg") {
-        download(new Blob([toSVG(d, page.theme, page.font, undefined, plan === "free").svg], { type: "image/svg+xml" }), n + ".svg");
-        if (plan === "free") setTimeout(() => openUpgrade("watermark"), 800);
+        download(new Blob([toSVG(d, page.theme, page.font, undefined, free).svg], { type: "image/svg+xml" }), n + ".svg");
+        if (free) setTimeout(() => openUpgrade("watermark"), 800);
       } else if (k === "png") {
-        download((await toPng(d, page, plan === "free")).blob, n + ".png");
-        if (plan === "free") setTimeout(() => openUpgrade("watermark"), 800);
+        download((await toPng(d, page, free)).blob, n + ".png");
+        if (free) setTimeout(() => openUpgrade("watermark"), 800);
       } else if (k === "pdf") {
-        download(await toPdf(d, page, plan === "free"), n + ".pdf");
-        if (plan === "free") setTimeout(() => openUpgrade("watermark"), 800);
-      } else if (k === "docx") download(await toDocx(d, page, plan === "free"), n + ".docx");
+        download(await toPdf(d, page, free), n + ".pdf");
+        if (free) setTimeout(() => openUpgrade("watermark"), 800);
+      } else if (k === "docx") download(await toDocx(d, page, free), n + ".docx");
       else if (k === "json") download(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }), n + ".methodflow.json");
       else if (k === "mermaid") setCode({ title: "Mermaid", text: toMermaid(d) });
       else if (k === "tikz") setCode({ title: "LaTeX (TikZ)", text: toTikz(d) });
@@ -821,10 +899,10 @@ function Inner() {
         <h2>Generate from your method</h2>
         <label className="f">
           Research design
-          <select value={method} onChange={(e) => setMethod(e.target.value as Method)}>
-            {METHODS.map((m) => (
+          <select value={method} onChange={(e) => setMethod(e.target.value as RequestMethod)}>
+            {REQUEST_METHODS.map((m) => (
               <option key={m} value={m}>
-                {ML[m]}
+                {RL[m]}
               </option>
             ))}
           </select>
@@ -842,7 +920,7 @@ function Inner() {
           Methodology text
           <textarea
             value={text}
-            maxLength={8000}
+            maxLength={plan === "pro" ? 20000 : 8000}
             rows={10}
             onChange={(e) => setText(e.target.value)}
             placeholder="e.g., A cross-sectional survey of 250 students using stratified random sampling. Data collected via a 40-item questionnaire and analyzed using multiple regression in SPSS."
@@ -976,6 +1054,7 @@ function Inner() {
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={(c) => c.source && c.target && s.connect(c.source, c.target)}

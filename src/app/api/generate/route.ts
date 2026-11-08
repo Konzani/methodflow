@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { METHODS } from "@/lib/core/ir";
+import { REQUEST_METHODS } from "@/lib/core/ir";
 import { cleanText } from "@/lib/core/sanitize";
 import { generate, generateFromDocument } from "@/lib/llm";
 import { budgetOk, ipOf, limit, spend } from "@/lib/ratelimit";
@@ -15,7 +15,7 @@ const PRO_CHARS = 20000;
 const PRO_DAILY_CAP = 200; 
 
 const B = z.object({
-  methodology: z.enum(METHODS),
+  methodology: z.enum(REQUEST_METHODS),
   text: z.string().max(PRO_CHARS).optional(),
   extra: z.string().max(300).optional(),
 });

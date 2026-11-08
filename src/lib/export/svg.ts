@@ -1,5 +1,5 @@
 import type { IR, N } from "@/lib/core/ir";
-import { layout } from "@/lib/core/layout";
+import { layout, labelLines } from "@/lib/core/layout";
 import { getPalette, groupTint, type Palette } from "@/lib/core/palettes";
 
 export type Theme = "mono" | "tint";
@@ -7,19 +7,6 @@ export type Font = "sans" | "serif";
 
 export const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
-
-const wrap = (s: string, max: number) => {
-  const out: string[] = [];
-  let l = "";
-  for (const w of s.replace(/\(n = \)/g, "(n\u00A0=\u00A0)").split(/ +/)) {
-    if (l && (l + " " + w).length > max) {
-      out.push(l);
-      l = w;
-    } else l = l ? l + " " + w : w;
-  }
-  if (l) out.push(l);
-  return out.slice(0, 4);
-};
 
 const colors = (n: N, p: Palette) => {
   const s = p.shapes[n.shape];
@@ -45,7 +32,6 @@ function shape(n: N, x: number, y: number, w: number, h: number, fill: string, s
 }
 
 export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", paletteOverride?: Palette, watermark = false) {
-  // 1. Run the new deterministic layout engine
   const laidOut = layout(src) as any;
   const W = laidOut.canvas.width;
   const H = laidOut.canvas.height;
@@ -54,7 +40,6 @@ export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", palet
   const ink = pal.ink;
   const ff = font === "serif" ? "'Times New Roman',Times,serif" : "Arial,Helvetica,sans-serif";
 
-  // 2. Draw groups exactly where the layout engine placed them
   const groups = laidOut.groups
     .map((g: any, i: number) => {
       if (g.x === undefined) return "";
@@ -64,7 +49,6 @@ export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", palet
     })
     .join("");
 
-  // 3. Draw edges using the exact points calculated by the engine (or fallback to curves)
   const edges = laidOut.edges
     .map((e: any) => {
       const source = laidOut.nodes.find((n: any) => n.id === e.source);
@@ -75,14 +59,12 @@ export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", palet
       let labelX = 0,
         labelY = 0;
       if (e.points && e.points.length) {
-        // Custom engine (TB)
         pathD = e.points.map((p: any, i: number) => (i === 0 ? `M${p.x},${p.y}` : `L${p.x},${p.y}`)).join(" ");
         if (e.labelPos) {
           labelX = e.labelPos.x;
           labelY = e.labelPos.y;
         }
       } else {
-        // Dagre fallback (LR)
         const sx = source.x + (source.w || 200) / 2;
         const sy = source.y + (source.h || 60);
         const tx = target.x + (target.w || 200) / 2;
@@ -99,11 +81,10 @@ export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", palet
     })
     .join("");
 
-  // 4. Draw nodes using the exact w/h calculated by the engine
   const nodes = laidOut.nodes
     .map((n: any) => {
       const c = colors(n, pal);
-      const L = wrap(n.label, n.shape === "decision" ? 16 : n.shape === "database" ? 20 : 24);
+      const L = labelLines(n.shape, n.label);
       const lh = 15;
       const y0 = n.y + n.h / 2 - ((L.length - 1) * lh) / 2 + 4 + (n.shape === "database" ? 5 : 0);
       return (
@@ -115,27 +96,27 @@ export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", palet
     })
     .join("");
 
-  // 5. The New Professional Watermark
-  const centerX = W / 2;
-  const centerY = H / 2;
-  const fontSize = Math.min(W, H) / 3.5; // Scales perfectly to the diagram size
-
+  const long = Math.max(W, H);
+  const short = Math.min(W, H);
+  const tiles = Math.max(1, Math.min(4, Math.round(long / short)));
+  const fontSize = Math.min(short / 3.5, 120);
+  const marks = Array.from({ length: tiles }, (_, i) => {
+    const f = (i + 0.5) / tiles;
+    const cx = W >= H ? W * f : W / 2;
+    const cy = W >= H ? H / 2 : H * f;
+    return `<g transform="translate(${cx}, ${cy}) rotate(-35)"><text x="0" y="0" font-family="Georgia, serif" font-size="${fontSize}" fill="#12161B" opacity="0.09" font-weight="900" text-anchor="middle" dominant-baseline="central" letter-spacing="0.15em">MethodFlow</text></g>`;
+  }).join("");
   const watermarkSvg = watermark
-    ? `
-    <g transform="translate(${centerX}, ${centerY}) rotate(-35)">
-      <text x="0" y="0" font-family="Georgia, serif" font-size="${fontSize}" fill="#12161B" opacity="0.06" font-weight="900" text-anchor="middle" dominant-baseline="central" letter-spacing="0.15em">MethodFlow</text>
-    </g>
-    <text x="${W - 24}" y="${H - 16}" font-family="Arial, sans-serif" font-size="12" fill="#9ca3af" text-anchor="end" font-style="italic">Generated with MethodFlow (Free Tier)</text>
-  `
+    ? `${marks}<text x="${W - 24}" y="${H - 16}" font-family="Arial, sans-serif" font-size="12" fill="#6b7280" text-anchor="end" font-style="italic">Generated with MethodFlow (Free Tier)</text>`
     : "";
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${ff}" role="img" aria-label="${esc(laidOut.meta.title)}">
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${ff}" role="img" aria-label="${esc(laidOut.meta.title)}"><title>${esc(laidOut.meta.title)}</title><desc>${esc(laidOut.meta.caption ?? "")}</desc>
     <defs>
       <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${ink}"/></marker>
     </defs>
     <rect width="100%" height="100%" fill="${pal.canvas}"/>
-    ${watermarkSvg}
     ${groups}${edges}${nodes}
+    ${watermarkSvg}
   </svg>`;
 
   return { svg, w: W, h: H };

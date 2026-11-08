@@ -23,9 +23,6 @@ export async function POST(req: NextRequest) {
     const p = B.safeParse(JSON.parse(raw));
     if (!p.success) return fail("BAD_REQUEST", 400);
     
-    if (!await limit("gen", ipOf(req.headers), req.cookies.get("mf_id")?.value)) return fail("RATE_LIMITED", 429);
-    if (!await budgetOk()) return fail("BUDGET", 503);
-
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     let isPro = false;
@@ -33,12 +30,16 @@ export async function POST(req: NextRequest) {
       const { data: profile } = await supabase.from("profiles").select("plan").eq("id", user.id).single();
       isPro = profile?.plan === "pro";
     }
-    
+
+    const key = user ? user.id : req.cookies.get("mf_id")?.value ?? ipOf(req.headers);
+    if (!(await limit(isPro ? "refine_pro" : "refine_free", key, undefined, isPro ? 150 : 10, "1 d"))) return fail("RATE_LIMITED", 429);
+    if (!await budgetOk()) return fail("BUDGET", 503);
+
     const t = cleanText(p.data.instruction, 500);
     const g = await refine({ ir: p.data.ir, instruction: t.text, isPro });
     
     await spend(g.cost);
-    return ok({ ir: g.ir, warnings: [...t.warnings, ...g.warnings] });
+    return ok({ ir: g.ir, source: g.source, warnings: [...t.warnings, ...g.warnings] });
   } catch (e) {
     if (e instanceof SyntaxError) return fail("BAD_REQUEST", 400);
     return fail("SERVER", 500);
