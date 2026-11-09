@@ -22,6 +22,7 @@ const csp = [
 /** @type {import('next').NextConfig} */
 export default {
   reactStrictMode: true,
+  env: { NEXT_PUBLIC_BUILD: (process.env.VERCEL_GIT_COMMIT_SHA || "dev").slice(0, 7) },
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   compiler: { removeConsole: { exclude: ["error"] } },

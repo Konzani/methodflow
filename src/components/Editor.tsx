@@ -41,7 +41,7 @@ import { withStyle } from "@/lib/core/style";
 import { TEMPLATES, getTemplate } from "@/lib/templates";
 import { loadDraft, parseIR, saveDraft } from "@/lib/persist";
 import { toSVG, type Theme } from "@/lib/export/svg";
-import { DEFAULT_PAGE, loadPageSettings, savePageSettings, type PageSettings } from "@/lib/export/page";
+import { DEFAULT_PAGE, loadPageSettings, resolvePage, savePageSettings, type PageSettings } from "@/lib/export/page";
 import { PALETTE_LIST, SWATCHES, getPalette } from "@/lib/core/palettes";
 import { toMermaid } from "@/lib/export/mermaid";
 import { toTikz } from "@/lib/export/tikz";
@@ -257,7 +257,8 @@ function Inner() {
   const checks = useMemo(() => validateGraph(ir), [ir]);
   const pal = getPalette(ir.meta.paletteId);
 
-  const isLand = page.orientation === "landscape";
+  const rp = resolvePage(page, (ir as any).canvas?.width ?? 600, (ir as any).canvas?.height ?? 800, 14);
+  const isLand = rp.orientation === "landscape";
   const pw = isLand ? 297 : 210;
   const ph = isLand ? 210 : 297;
   const pageW = pw * 3.7795;
@@ -1114,7 +1115,7 @@ function Inner() {
                     style={{ filter: "drop-shadow(0px 4px 12px rgba(0,0,0,0.05))" }}
                   />
                   <text x={pageW / 2} y={-20} textAnchor="middle" fontSize={18} fill="#9ca3af" fontWeight="bold">
-                    {page.size.toUpperCase()} {page.orientation.toUpperCase()} ({pw}×{ph}mm)
+                    {page.size.toUpperCase()} {rp.orientation.toUpperCase()} ({pw}×{ph}mm)
                   </text>
                 </svg>
               </div>
@@ -1291,6 +1292,7 @@ function Inner() {
               </select>
             </label>
 
+            <div style={{ fontSize: 11, opacity: 0.5, margin: "4px 0" }}>Engine 3 · build {process.env.NEXT_PUBLIC_BUILD}</div>
             {pinfo.level !== "good" ? (
               <div style={{ fontSize: 12, lineHeight: 1.4, margin: "6px 0", color: pinfo.level === "small" ? "#b45309" : "inherit" }}>
                 Text prints at about {pinfo.pt.toFixed(1)} pt on this page.
@@ -1323,6 +1325,7 @@ function Inner() {
                   value={page.orientation}
                   onChange={(e) => setPage({ ...page, orientation: e.target.value as PageSettings["orientation"] })}
                 >
+                  <option value="auto">Auto (best fit)</option>
                   <option value="portrait">Portrait</option>
                   <option value="landscape">Landscape</option>
                 </select>

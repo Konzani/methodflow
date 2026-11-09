@@ -54,7 +54,9 @@ function wrapLines(label: string, maxChars: number): string[] {
 }
 
 export function labelLines(shape: string, label: string): string[] {
-  return wrapLines(label ?? "", WRAP_AT[shape] ?? 24);
+  const base = WRAP_AT[shape] ?? 24;
+  const longest = Math.max(0, ...(label ?? "").split(/[ \t\r\n]+/).map((w) => w.length));
+  return wrapLines(label ?? "", Math.min(Math.max(base, longest), 28));
 }
 
 export function sizeOf(n: INode): { w: number; h: number } {
@@ -76,7 +78,7 @@ export function sizeOf(n: INode): { w: number; h: number } {
 const NEG = /^(no|fail\w*|exclu\w*|reject\w*|deni\w*|denied|not|inelig\w*|below|unmet|invalid|retry|insufficient)\b/i;
 const NONE = "__none";
 
-function compute(ir: IRLike): Geo {
+export function compute(ir: IRLike): Geo {
   const M = METRICS[(ir.meta?.density as keyof typeof METRICS) ?? "balanced"] ?? METRICS.balanced;
   const nodes = ir.nodes;
   const idx = new Map(nodes.map((n, i) => [n.id, i]));
@@ -470,7 +472,9 @@ function placeLR(ir: IRLike): Geo {
   return fitCanvas({ nodes: nodeBox, groups: groupBox, nodeGroup, edges: edgesOut, ends, width: 0, height: 0 });
 }
 
-const fitScale = (g: Geo) => Math.min(1, 642 / g.width, 971 / g.height);
+export const pageScore = (w: number, h: number) =>
+  Math.max(Math.min(1, 642 / w, 918 / h), Math.min(1, 971 / w, 590 / h));
+const fitScale = (g: Geo) => pageScore(g.width, g.height);
 
 function splits(n: number, k: number): number[][] {
   if (k === 1) return [[n]];
@@ -479,24 +483,46 @@ function splits(n: number, k: number): number[][] {
   return out;
 }
 
-function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
+export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
   const order = [...geo.groups.keys()].sort((a, b) => geo.groups.get(a)!.y - geo.groups.get(b)!.y);
   if (order.length < k || ir.nodes.some((n) => !n.groupId || !geo.groups.has(n.groupId))) return null;
-  const gap = 36;
-  const colW = geo.width - 2 * MARGIN;
+  const gap = 56;
+
+  const extent = new Map<string, { x0: number; x1: number }>();
+  const tight = new Map<string, Box>();
+  const PADX = 20;
+  for (const gid of order) {
+    const b = geo.groups.get(gid)!;
+    const members = [...geo.nodeGroup].filter(([, g]) => g === gid).map(([id]) => geo.nodes.get(id)!);
+    let x0 = Math.min(...members.map((m) => m.x)) - PADX;
+    let x1 = Math.max(...members.map((m) => m.x + m.w)) + PADX;
+    for (const [id, [s, t]] of geo.ends) {
+      if (geo.nodeGroup.get(s) !== gid || geo.nodeGroup.get(t) !== gid) continue;
+      for (const p of geo.edges.get(id)!.points) {
+        x0 = Math.min(x0, p.x);
+        x1 = Math.max(x1, p.x);
+      }
+    }
+    extent.set(gid, { x0, x1 });
+    tight.set(gid, { x: x0, y: b.y, w: x1 - x0, h: b.h });
+  }
   const heightOf = (ids: string[]) => {
     const f = geo.groups.get(ids[0])!;
     const l = geo.groups.get(ids[ids.length - 1])!;
     return l.y + l.h - f.y;
   };
+  const widthOf = (ids: string[]) => Math.max(...ids.map((g) => extent.get(g)!.x1)) - Math.min(...ids.map((g) => extent.get(g)!.x0));
+
   let best: string[][] | null = null;
-  let bestH = Infinity;
+  let bestScore = -1;
   for (const sp of splits(order.length, k)) {
     let i = 0;
     const cols = sp.map((c) => order.slice(i, (i += c)));
+    const w = cols.reduce((a, c) => a + widthOf(c), 0) + gap * (cols.length - 1);
     const h = Math.max(...cols.map(heightOf));
-    if (h < bestH) {
-      bestH = h;
+    const sc = pageScore(w + 2 * MARGIN, h + 2 * MARGIN);
+    if (sc > bestScore) {
+      bestScore = sc;
       best = cols;
     }
   }
@@ -504,21 +530,26 @@ function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
 
   const colOf = new Map<string, number>();
   const shift = new Map<string, P>();
+  const colX: number[] = [];
+  let cursor = MARGIN;
   best.forEach((ids, ci) => {
+    const left = Math.min(...ids.map((g) => extent.get(g)!.x0));
     const top = geo.groups.get(ids[0])!.y;
+    colX.push(cursor);
     ids.forEach((gid) => {
       colOf.set(gid, ci);
-      shift.set(gid, { x: ci * (colW + gap), y: MARGIN - top });
+      shift.set(gid, { x: cursor - left, y: MARGIN - top });
     });
+    cursor += widthOf(ids) + gap;
   });
   const mv = (b: Box, d: P): Box => ({ ...b, x: b.x + d.x, y: b.y + d.y });
   const nodes = new Map<string, Box>();
   for (const [id, b] of geo.nodes) nodes.set(id, mv(b, shift.get(geo.nodeGroup.get(id)!)!));
   const groups = new Map<string, Box>();
-  for (const [id, b] of geo.groups) groups.set(id, mv(b, shift.get(id)!));
+  for (const [id] of geo.groups) groups.set(id, mv(tight.get(id)!, shift.get(id)!));
 
   const gutters: number[] = [];
-  for (let ci = 0; ci < best.length - 1; ci++) gutters.push(MARGIN + (ci + 1) * (colW + gap) - gap / 2);
+  for (let ci = 1; ci < best.length; ci++) gutters.push(colX[ci] - gap / 2);
   const ys: number[] = [MARGIN / 2];
   for (const ids of best)
     for (let i = 0; i + 1 < ids.length; i++) {
@@ -537,7 +568,7 @@ function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
     const gs = geo.nodeGroup.get(s)!;
     const gt = geo.nodeGroup.get(t)!;
     let pts: P[];
-    if (colOf.get(gs) === colOf.get(gt)) {
+    if (gs === gt) {
       const d = shift.get(gs)!;
       pts = geo.edges.get(id)!.points.map((p) => ({ x: p.x + d.x, y: p.y + d.y }));
     } else {
@@ -552,10 +583,10 @@ function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
       }
       const xs = gutters.map((g) => g + 10 * (lanes.get(g) ?? 0));
       const r = route(sb, tb, obstacles, xs, ys, used ? exits.filter((x) => !used!.has(x)) : exits);
+      used?.add(r.exit);
       gutters.forEach((g, gi) => {
         if (r.points.some((p, i) => i > 0 && p.x === xs[gi] && r.points[i - 1].x === xs[gi] && p.y !== r.points[i - 1].y)) lanes.set(g, (lanes.get(g) ?? 0) + 1);
       });
-      used?.add(r.exit);
       pts = r.points;
     }
     edges.set(id, { points: pts, label: labelled.has(id) ? labelAtPts(pts) : undefined });
@@ -566,7 +597,7 @@ function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
 export function foldCandidate(ir: IRLike, tb: Geo): Geo | null {
   let best: Geo | null = null;
   let bestScale = fitScale(tb) * 1.15;
-  const maxK = Math.min(3, new Set(ir.nodes.map((n) => n.groupId)).size);
+  const maxK = Math.min(5, new Set(ir.nodes.map((n) => n.groupId)).size);
   for (let k = 2; k <= maxK; k++) {
     const g = foldGeo(ir, tb, k);
     if (g && fitScale(g) > bestScale) {

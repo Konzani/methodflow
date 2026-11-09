@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { layout } from "@/lib/core/layout";
+import { layout, pageScore } from "@/lib/core/layout";
 
 const G: [string, string][] = [["g1", "Study area and data"], ["g2", "Data preprocessing"], ["g3", "MaxEnt modelling"], ["g4", "GWR modelling"], ["g5", "Integration and validation"]];
 const L: [string, string, number][] = [
@@ -17,7 +17,7 @@ const ir = (dir: string): any => ({
   nodes: L.map(([label, shape, g], i) => ({ id: "n" + (i + 1), label, shape, groupId: "g" + g })),
   edges: ed.map(([a, b, label], i) => ({ id: "e" + (i + 1), source: "n" + a, target: "n" + b, label })),
 });
-const scale = (o: any) => Math.min(1, 642 / o.canvas.width, 971 / o.canvas.height);
+const scale = (o: any) => pageScore(o.canvas.width, o.canvas.height);
 const hits = (o: any) => {
   let c = 0;
   for (const e of o.edges) {

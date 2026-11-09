@@ -1,5 +1,5 @@
 export type PageSize = "a4" | "a3" | "a5" | "letter" | "legal" | "custom";
-export type Orientation = "portrait" | "landscape";
+export type Orientation = "portrait" | "landscape" | "auto";
 export type FitMode = "fit" | "actual";
 export type FontStyle = "sans" | "serif";
 
@@ -16,7 +16,7 @@ export type PageSettings = {
 
 export const DEFAULT_PAGE: PageSettings = {
   size: "a4",
-  orientation: "portrait",
+  orientation: "auto",
   margin: 20,
   fit: "fit",
   dpi: 300,
@@ -46,12 +46,20 @@ export function pageSizeMM(p: PageSettings): { w: number; h: number } {
   return p.orientation === "landscape" ? { w: h, h: w } : { w, h };
 }
 
+export function resolvePage(page: PageSettings, svgW: number, svgH: number, reserveMM = 0): PageSettings {
+  if (page.orientation !== "auto") return page;
+  const p = computeFit(svgW, svgH, { ...page, orientation: "portrait" }, reserveMM).scale;
+  const l = computeFit(svgW, svgH, { ...page, orientation: "landscape" }, reserveMM).scale;
+  return { ...page, orientation: l > p * 1.02 ? "landscape" : "portrait" };
+}
+
 export function computeFit(
   svgUnitsW: number,
   svgUnitsH: number,
   page: PageSettings,
   reserveMM = 0,
 ): { scale: number; pxW: number; pxH: number; mmW: number; mmH: number; overflow: boolean } {
+  if (page.orientation === "auto") page = resolvePage(page, svgUnitsW, svgUnitsH, reserveMM);
   const pageMM = pageSizeMM(page);
   const contentMM = {
     w: pageMM.w - 2 * page.margin,

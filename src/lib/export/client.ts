@@ -2,7 +2,7 @@
 import type { IR } from "@/lib/core/ir";
 import { toSVG } from "./svg";
 import { captionOf, figureCaption } from "./caption";
-import { computeFit, pageSizeMM, type PageSettings } from "./page";
+import { computeFit, pageSizeMM, resolvePage, type PageSettings } from "./page";
 
 export const slug = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "flowchart";
@@ -71,6 +71,7 @@ const dataUrl = (b: Blob) =>
 
 export async function toPng(ir: IR, page: PageSettings, watermark = false) {
   const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
+  page = resolvePage(page, w, h);
   const fit = computeFit(w, h, page);
   const blob = await svgToPngBlob(svg, fit.pxW, fit.pxH);
   return { blob, ...fit, w, h };
@@ -80,6 +81,7 @@ const CAPTION_MM = 14;
 
 export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
   const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
+  page = resolvePage(page, w, h, CAPTION_MM);
   const fit = computeFit(w, h, page, CAPTION_MM);
   
   const { jsPDF } = await import("jspdf");
@@ -87,7 +89,7 @@ export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
   
   const dims = pageSizeMM(page);
   const doc = new jsPDF({
-    orientation: page.orientation,
+    orientation: page.orientation === "landscape" ? "landscape" : "portrait",
     unit: "mm",
     format: [dims.w, dims.h],
   });
@@ -130,6 +132,7 @@ export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
 
 export async function toDocx(ir: IR, page: PageSettings, watermark = false) {
   const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
+  page = resolvePage(page, w, h, CAPTION_MM);
   const fit = computeFit(w, h, page);
   const png = await svgToPngBlob(svg, fit.pxW, fit.pxH);
   const {

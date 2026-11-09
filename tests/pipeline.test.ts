@@ -76,7 +76,8 @@ describe("layout", () => {
     expect(out.canvas.width).toBeGreaterThan(900);
   });
   it("hard-breaks long words and keeps (n = ) together", () => {
-    expect(Math.max(...labelLines("process", "Supercalifragilisticexpialidocious_extra_long_token").map((l) => l.length))).toBeLessThanOrEqual(24);
+    expect(Math.max(...labelLines("process", "Supercalifragilisticexpialidocious_extra_long_token").map((l) => l.length))).toBeLessThanOrEqual(28);
+    expect(labelLines("decision", "Multicollinearity acceptable?")[0]).toBe("Multicollinearity");
     expect(labelLines("process", "Screen records after deduplication (n = )").join(" ")).toContain("(n = )");
     expect(sizeOf({ id: "a", label: "x", shape: "process" }).w).toBe(190);
   });

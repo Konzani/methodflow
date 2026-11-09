@@ -19,6 +19,8 @@ export function tidyPts(pts: Pt[]): Pt[] {
   });
 }
 
+const dedupe = (pts: Pt[]): Pt[] => pts.filter((p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y);
+
 const port = (b: Rect, d: Dir): Pt =>
   d === "r" ? { x: b.x + b.w, y: b.y + b.h / 2 }
   : d === "l" ? { x: b.x, y: b.y + b.h / 2 }
@@ -46,7 +48,7 @@ function score(path: Pt[], s: Rect, t: Rect, obstacles: Rect[], penalty: number)
     if (hits(a, b, s, 2)) bad++;
     if (hits(a, b, t, 2)) bad++;
   }
-  return len + 40 * (path.length - 2) + 100000 * bad + penalty;
+  return len + 40 * (tidyPts(path).length - 2) + 100000 * bad + penalty;
 }
 
 const EXIT_COST: Record<Dir, number> = { r: 0, b: 0, l: 25, t: 25 };
@@ -73,9 +75,9 @@ export function route(
       for (const c of xs) mids.push([{ x: c, y: a2.y }, { x: c, y: b2.y }]);
       for (const c of ys) mids.push([{ x: a2.x, y: c }, { x: b2.x, y: c }]);
       for (const m of mids) {
-        const path = tidyPts([a, a2, ...m, b2, b]);
-        const cost = score(path, s, t, obstacles, EXIT_COST[de] + ENTRY_COST[dn]);
-        if (!best || cost < best.cost) best = { points: path, exit: de, cost };
+        const raw = dedupe([a, a2, ...m, b2, b]);
+        const cost = score(raw, s, t, obstacles, EXIT_COST[de] + ENTRY_COST[dn]);
+        if (!best || cost < best.cost) best = { points: tidyPts(raw), exit: de, cost };
       }
     }
   }
