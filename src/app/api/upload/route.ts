@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     });
 
     await spend(g.cost);
-    return ok({ ir: g.ir, warnings: g.warnings });
+    return ok({ ir: g.ir, source: g.source, warnings: g.warnings, reason: g.reason });
   } catch (e) {
     console.error("Upload route fatal error:", e);
     return fail("SERVER", 500);

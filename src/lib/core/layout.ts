@@ -183,11 +183,15 @@ function compute(ir: IRLike): Geo {
   const skip: IEdge[][] = gorder.map(() => []);
   const backIn: IEdge[][] = gorder.map(() => []);
   const backOut: IEdge[] = [];
+  const longSet = new Set<string>();
   for (const e of edges) {
     const G = gi.get(e.source)!;
     if (back.has(e.id)) {
       if (gi.get(e.target) === G) backIn[G].push(e);
       else backOut.push(e);
+    } else if (gi.get(e.target)! - G > 1) {
+      backOut.push(e);
+      longSet.add(e.id);
     } else if (
       gi.get(e.target) === G &&
       lane.get(e.source) === lane.get(e.target) &&
@@ -257,6 +261,20 @@ function compute(ir: IRLike): Geo {
     const sl = lane.get(e.source)!; const tl = lane.get(e.target)!;
     const same = gi.get(e.source) === gi.get(e.target);
     const my = entryY(e.target);
+    if (longSet.has(e.id)) {
+      const gx = gOut(chIdx.get(e.id) ?? 0);
+      const sg = gi.get(e.source)!;
+      const blocked = nodes.some(
+        (o) => o.id !== e.source && gi.get(o.id) === sg && layer.get(o.id) === layer.get(e.source) && lane.get(o.id)! > sl
+      );
+      const lastRow = layer.get(e.source) === Math.max(...members.get(gorder[sg])!.map((o) => layer.get(o.id)!));
+      if (blocked && lastRow) {
+        const gb = groupBox.get(gorder[sg]);
+        const gapY = (gb ? gb.y + gb.h : s.y + s.h) + M.groupGap / 2;
+        return [bottom(s), { x: s.cx, y: gapY }, { x: gx, y: gapY }, { x: gx, y: my }, { x: t.cx, y: my }, top(t)];
+      }
+      return [right(s), { x: gx, y: s.cy }, { x: gx, y: my }, { x: t.cx, y: my }, top(t)];
+    }
     if (side.has(e.id)) {
       const a = right(s);
       if (tl > sl && t.y > a.y) return [a, { x: t.cx, y: a.y }, top(t)];

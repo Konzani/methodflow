@@ -594,7 +594,11 @@ function Inner() {
         setMsg(j.message || "Generation failed.");
       } else {
         const p = IRSchema.safeParse(j.ir);
-        if (!p.success) {
+        if (j.source === "template") {
+          setMsg(
+            `Could not generate a flowchart from your text, so your diagram is unchanged. ${(j.warnings as string[] | undefined)?.join(" ") ?? ""} ${j.reason ? "Reason: " + j.reason + ". " : ""}Try again, or shorten the text.`.replace(/\s+/g, " ").trim()
+          );
+        } else if (!p.success) {
           setMsg("The result was not valid. Your diagram is unchanged.");
         } else {
           const g = useDiagram.getState();
@@ -639,7 +643,9 @@ function Inner() {
         setMsg(j.message || "Upload failed.");
       } else {
         const p = IRSchema.safeParse(j.ir);
-        if (!p.success) {
+        if (j.source === "template") {
+          setMsg(`Could not build a flowchart from that document, so your diagram is unchanged. ${j.reason ? "Reason: " + j.reason + "." : ""}`.trim());
+        } else if (!p.success) {
           setMsg("The result was not valid.");
         } else {
           const g = useDiagram.getState();

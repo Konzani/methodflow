@@ -21,7 +21,7 @@ type Msg = { role: "system" | "user" | "assistant"; content: string };
 
 type CallResult = { text: string; finish: string; tin: number; tout: number };
 
-export type Gen = { ir: IR; source: "ai" | "template"; warnings: string[]; cost: number; provider?: string };
+export type Gen = { ir: IR; source: "ai" | "template"; warnings: string[]; cost: number; provider?: string; reason?: string };
 
 const MIN_CALL_MS = 6_000;
 
@@ -50,6 +50,13 @@ class ApiError extends Error {
     this.status = status;
     this.body = body;
   }
+}
+
+function describe(e: unknown): string {
+  const err = e as { name?: string; message?: string };
+  if (e instanceof ApiError) return `HTTP ${e.status}`;
+  if (err?.name === "AbortError") return "timed out";
+  return err?.message?.slice(0, 80) || err?.name || "error";
 }
 
 function noteFailure(a: Attempt, e: unknown) {
@@ -124,7 +131,8 @@ type SolveOpts = {
   guard?: (ir: IR) => string[];
 };
 
-async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: string; tried: boolean }> {
+async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: string; tried: boolean; why: string[] }> {
+  const why: string[] = [];
   let cost = 0;
   let tried = false;
 
@@ -163,17 +171,23 @@ async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: 
           continue;
         }
 
-        if (good || ++repairs >= 2) break;
+        if (good || ++repairs >= 2) {
+          if (!good) why.push(`${a.model}: ${r.finish === "length" ? "output cut off (token limit)" : issues[0] ?? "invalid output"}`);
+          break;
+        }
         msgs.push({ role: "assistant", content: r.text }, { role: "user", content: repairMsg(issues) });
       }
     } catch (e) {
-      if (!good) noteFailure(a, e);
+      if (!good) {
+        noteFailure(a, e);
+        why.push(`${a.model}: ${describe(e)}`);
+      }
       else console.error(`[llm] ${a.id} polish pass failed, keeping the valid draft`);
     }
 
-    if (good) return { ir: layout(fixTopology(good.ir)), cost, provider: a.provider, tried };
+    if (good) return { ir: layout(fixTopology(good.ir)), cost, provider: a.provider, tried, why };
   }
-  return { cost, tried };
+  return { cost, tried, why };
 }
 
 const list = (xs: string[]) => xs.slice(0, 6).join(", ");
@@ -215,10 +229,11 @@ export async function generate(a: {
     warnings: [
       ...w,
       r.tried
-        ? "The generator could not produce a valid diagram. Showing the closest template."
-        : "AI is unavailable. Showing the closest template.",
+        ? "The generator could not produce a valid diagram from your text."
+        : "The AI service is unavailable or out of time.",
     ],
     cost: r.cost,
+    reason: r.why.join(" | ") || undefined,
   };
 }
 
@@ -319,5 +334,6 @@ export async function refine(a: { ir: IR; instruction: string; isPro?: boolean; 
     source: "template",
     warnings: [r.tried ? "The AI could not complete the refinement. Your diagram is unchanged." : "AI is unavailable."],
     cost: r.cost,
+    reason: r.why.join(" | ") || undefined,
   };
 }

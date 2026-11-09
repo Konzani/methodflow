@@ -68,7 +68,7 @@ export function attempts(deep: boolean, env: Env = process.env): Attempt[] {
     key,
     model: fast,
     thinking: false,
-    maxTokens: 4500,
+    maxTokens: 8000,
     timeoutMs: 40_000,
   });
   list.push({
@@ -78,7 +78,7 @@ export function attempts(deep: boolean, env: Env = process.env): Attempt[] {
     key: env.OPENAI_API_KEY || "",
     model: oai,
     thinking: false,
-    maxTokens: 4500,
+    maxTokens: 8000,
     timeoutMs: 40_000,
   });
   return list.filter((a) => a.key && a.model);

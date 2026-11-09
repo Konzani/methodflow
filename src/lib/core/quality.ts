@@ -36,7 +36,7 @@ const TERMINAL_OUTCOME =
   /\b(exclu\w*|reject\w*|withdr\w*|discontinu\w*|ineligible|not eligible|not retrieved|lost to follow|stop\w*|terminat\w*|abandon\w*)\b/i;
 
 const PARALLEL_CUE =
-  /\b(parallel(?:ly)?|simultaneous(?:ly)?|concurrent(?:ly)?|convergent|in tandem|independent (?:strands?|arms?|streams?|analys[ei]s)|two (?:strands|arms|streams)|both (?:strands|arms|streams))\b/i;
+  /\b(parallel(?:ly)?|simultaneous(?:ly)?|concurrent(?:ly)?|convergent|multi-model|ensemble|in tandem|independent (?:strands?|arms?|streams?|analys[ei]s)|two (?:strands|arms|streams)|both (?:strands|arms|streams))\b/i;
 
 const NUM = /\d+(?:[.,]\d+)*/g;
 const normNum = (t: string) => (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t) ? t.replace(/,/g, "") : t.replace(",", "."));

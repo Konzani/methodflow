@@ -129,3 +129,36 @@ describe("billing, style, models", () => {
     expect(DEFAULT_DEEP_MODEL).toBe("deepseek-v4-pro");
   });
 });
+
+describe("direction switching", () => {
+  const hits = (ir: any) => {
+    let c = 0;
+    for (const e of ir.edges) {
+      const pts = e.points ?? [];
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        for (const n of ir.nodes) {
+          if (n.id === e.source || n.id === e.target) continue;
+          if (Math.max(a.x, b.x) > n.x && Math.min(a.x, b.x) < n.x + n.w && Math.max(a.y, b.y) > n.y && Math.min(a.y, b.y) < n.y + n.h) { c++; break; }
+        }
+      }
+    }
+    return c;
+  };
+  it("tb -> lr -> tb keeps groups, rebuilds every edge, and never routes through nodes", () => {
+    let ir: any = layout(example());
+    for (const d of ["lr", "tb", "lr", "auto", "tb"]) {
+      ir = layout({ ...ir, meta: { ...ir.meta, flowDirection: d } });
+      expect(ir.groups.length).toBe(4);
+      expect(ir.groups.every((g: any) => Number.isFinite(g.x))).toBe(true);
+      expect(ir.edges.every((e: any) => e.points?.length >= 2)).toBe(true);
+      expect(hits(ir)).toBe(0);
+    }
+  });
+  it("long skip edges leave through the side gutter, not through intervening groups", () => {
+    const ir: any = example();
+    ir.edges.push({ id: "e99", source: "n2", target: "n13" });
+    const out: any = layout(ir);
+    expect(hits(out)).toBe(0);
+  });
+});
