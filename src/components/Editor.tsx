@@ -36,6 +36,7 @@ import {
 } from "@/lib/core/ir";
 import { validateGraph } from "@/lib/core/validate";
 import { layout } from "@/lib/core/layout";
+import { printInfo } from "@/lib/export/print";
 import { withStyle } from "@/lib/core/style";
 import { TEMPLATES, getTemplate } from "@/lib/templates";
 import { loadDraft, parseIR, saveDraft } from "@/lib/persist";
@@ -234,6 +235,7 @@ function Inner() {
   const [code, setCode] = useState<{ title: string; text: string } | null>(null);
   const [grp, setGrp] = useState("");
   const [page, setPage] = useState<PageSettings>(DEFAULT_PAGE);
+  const pinfo = useMemo(() => printInfo(ir, page), [ir, page]);
   const [cloudId, setCloudId] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [plan, setPlan] = useState<"free" | "pro">("free");
@@ -663,8 +665,15 @@ function Inner() {
     finishProgress(ok);
   }
 
+  const SIMPLIFY =
+    "Simplify this flowchart so it stays legible on one printed page: merge microsteps that share an input, output and purpose into single steps, keep every decision gate, revision loop and parallel strand, and aim for 14 to 18 nodes in total. Do not remove any essential stage and do not add new steps.";
+
   async function doRefine() {
-    if (!refineText.trim()) return;
+    return runRefine(refineText, true);
+  }
+
+  async function runRefine(instruction: string, clearAfter: boolean) {
+    if (!instruction.trim()) return;
     setBusy(true);
     setMsg("");
     startProgress(REFINE_STAGES);
@@ -673,7 +682,7 @@ function Inner() {
       const r = await fetch("/api/refine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ir: useDiagram.getState().ir, instruction: refineText }),
+        body: JSON.stringify({ ir: useDiagram.getState().ir, instruction }),
       });
       const j = await r.json();
       if (r.status === 429) {
@@ -692,8 +701,10 @@ function Inner() {
           g.commit(layout(withStyle(p.data, g.ir.meta)));
           useDiagram.setState((x) => ({ rev: x.rev + 1 }));
           setMsg("Refined successfully.");
-          setRefineText("");
-          setPanel(null);
+          if (clearAfter) {
+            setRefineText("");
+            setPanel(null);
+          }
           ok = true;
         }
       }
@@ -1279,6 +1290,21 @@ function Inner() {
                 ))}
               </select>
             </label>
+
+            {pinfo.level !== "good" ? (
+              <div style={{ fontSize: 12, lineHeight: 1.4, margin: "6px 0", color: pinfo.level === "small" ? "#b45309" : "inherit" }}>
+                Text prints at about {pinfo.pt.toFixed(1)} pt on this page.
+                {pinfo.level === "small" ? " That is hard to read in a thesis." : ""}
+                {pinfo.nodes > 16 ? (
+                  <>
+                    {" "}
+                    <button type="button" className="btn" disabled={busy} onClick={() => runRefine(SIMPLIFY, false)}>
+                      Simplify to a thesis figure
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
               <label className="f">

@@ -172,6 +172,7 @@ ${
     : `- Normally use ${range(LIMITS.freeNodes)} nodes. Use up to ${LIMITS.proNodes[1]} for genuinely complex methodologies. Do not compress essential stages to hit a target.`
 }
 - A simple study gives a simple flowchart; a multi-phase study gives a correspondingly detailed one.
+- The figure must stay legible when printed on one page of a thesis: prefer fewer, richer steps over many microsteps, and merge consecutive steps that share an input, output and purpose.
 - Use ${range(LIMITS.groups)} groups (study phases), normally ${range(LIMITS.groupsTypical)}, each with at least two nodes.
   Group labels are 2–5 words. Every node has exactly one valid groupId.
 - Labels may exceed the word range only when a named method, dataset or variable would otherwise be lost.

@@ -1,4 +1,5 @@
 import dagre from "dagre";
+import { route, tidyPts } from "./route";
 
 export type P = { x: number; y: number };
 export type LabelPos = P & { anchor: "start" | "middle" | "end" };
@@ -342,19 +343,7 @@ function labelAtPts(pts: P[]): LabelPos {
   return { x: a.x + (b.x >= a.x ? 8 : -8), y: a.y - 7, anchor: b.x >= a.x ? "start" : "end" };
 }
 
-function tidy(pts: P[]): P[] {
-  const out: P[] = [];
-  for (const p of pts) {
-    const l = out[out.length - 1];
-    if (!l || l.x !== p.x || l.y !== p.y) out.push(p);
-  }
-  return out.filter((p, i) => {
-    if (i === 0 || i === out.length - 1) return true;
-    const a = out[i - 1];
-    const b = out[i + 1];
-    return !((a.x === p.x && p.x === b.x) || (a.y === p.y && p.y === b.y));
-  });
-}
+const tidy = tidyPts;
 
 function elbow(s: Box, t: Box): P[] {
   const scx = s.x + s.w / 2, scy = s.y + s.h / 2;
@@ -483,6 +472,111 @@ function placeLR(ir: IRLike): Geo {
 
 const fitScale = (g: Geo) => Math.min(1, 642 / g.width, 971 / g.height);
 
+function splits(n: number, k: number): number[][] {
+  if (k === 1) return [[n]];
+  const out: number[][] = [];
+  for (let first = 1; first <= n - (k - 1); first++) for (const rest of splits(n - first, k - 1)) out.push([first, ...rest]);
+  return out;
+}
+
+function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
+  const order = [...geo.groups.keys()].sort((a, b) => geo.groups.get(a)!.y - geo.groups.get(b)!.y);
+  if (order.length < k || ir.nodes.some((n) => !n.groupId || !geo.groups.has(n.groupId))) return null;
+  const gap = 36;
+  const colW = geo.width - 2 * MARGIN;
+  const heightOf = (ids: string[]) => {
+    const f = geo.groups.get(ids[0])!;
+    const l = geo.groups.get(ids[ids.length - 1])!;
+    return l.y + l.h - f.y;
+  };
+  let best: string[][] | null = null;
+  let bestH = Infinity;
+  for (const sp of splits(order.length, k)) {
+    let i = 0;
+    const cols = sp.map((c) => order.slice(i, (i += c)));
+    const h = Math.max(...cols.map(heightOf));
+    if (h < bestH) {
+      bestH = h;
+      best = cols;
+    }
+  }
+  if (!best) return null;
+
+  const colOf = new Map<string, number>();
+  const shift = new Map<string, P>();
+  best.forEach((ids, ci) => {
+    const top = geo.groups.get(ids[0])!.y;
+    ids.forEach((gid) => {
+      colOf.set(gid, ci);
+      shift.set(gid, { x: ci * (colW + gap), y: MARGIN - top });
+    });
+  });
+  const mv = (b: Box, d: P): Box => ({ ...b, x: b.x + d.x, y: b.y + d.y });
+  const nodes = new Map<string, Box>();
+  for (const [id, b] of geo.nodes) nodes.set(id, mv(b, shift.get(geo.nodeGroup.get(id)!)!));
+  const groups = new Map<string, Box>();
+  for (const [id, b] of geo.groups) groups.set(id, mv(b, shift.get(id)!));
+
+  const gutters: number[] = [];
+  for (let ci = 0; ci < best.length - 1; ci++) gutters.push(MARGIN + (ci + 1) * (colW + gap) - gap / 2);
+  const ys: number[] = [MARGIN / 2];
+  for (const ids of best)
+    for (let i = 0; i + 1 < ids.length; i++) {
+      const a = groups.get(ids[i])!;
+      const b = groups.get(ids[i + 1])!;
+      ys.push((a.y + a.h + b.y) / 2);
+    }
+  ys.push(Math.max(...[...groups.values()].map((g) => g.y + g.h)) + 14);
+
+  const nodeById = new Map(ir.nodes.map((n) => [n.id, n]));
+  const taken = new Map<string, Set<string>>();
+  const lanes = new Map<number, number>();
+  const edges = new Map<string, { points: P[]; label?: LabelPos }>();
+  const labelled = new Set(ir.edges.filter((e) => e.label).map((e) => e.id));
+  for (const [id, [s, t]] of geo.ends) {
+    const gs = geo.nodeGroup.get(s)!;
+    const gt = geo.nodeGroup.get(t)!;
+    let pts: P[];
+    if (colOf.get(gs) === colOf.get(gt)) {
+      const d = shift.get(gs)!;
+      pts = geo.edges.get(id)!.points.map((p) => ({ x: p.x + d.x, y: p.y + d.y }));
+    } else {
+      const sb = nodes.get(s)!;
+      const tb = nodes.get(t)!;
+      const obstacles = [...nodes.entries()].filter(([nid]) => nid !== s && nid !== t).map(([, b]) => b);
+      const exits: ("r" | "b" | "l" | "t")[] = ["r", "b", "l", "t"];
+      let used = taken.get(s);
+      if (nodeById.get(s)!.shape === "decision") {
+        used = used ?? new Set<string>();
+        taken.set(s, used);
+      }
+      const xs = gutters.map((g) => g + 10 * (lanes.get(g) ?? 0));
+      const r = route(sb, tb, obstacles, xs, ys, used ? exits.filter((x) => !used!.has(x)) : exits);
+      gutters.forEach((g, gi) => {
+        if (r.points.some((p, i) => i > 0 && p.x === xs[gi] && r.points[i - 1].x === xs[gi] && p.y !== r.points[i - 1].y)) lanes.set(g, (lanes.get(g) ?? 0) + 1);
+      });
+      used?.add(r.exit);
+      pts = r.points;
+    }
+    edges.set(id, { points: pts, label: labelled.has(id) ? labelAtPts(pts) : undefined });
+  }
+  return fitCanvas({ nodes, groups, nodeGroup: geo.nodeGroup, edges, ends: geo.ends, width: 0, height: 0 });
+}
+
+export function foldCandidate(ir: IRLike, tb: Geo): Geo | null {
+  let best: Geo | null = null;
+  let bestScale = fitScale(tb) * 1.15;
+  const maxK = Math.min(3, new Set(ir.nodes.map((n) => n.groupId)).size);
+  for (let k = 2; k <= maxK; k++) {
+    const g = foldGeo(ir, tb, k);
+    if (g && fitScale(g) > bestScale) {
+      best = g;
+      bestScale = fitScale(g);
+    }
+  }
+  return best;
+}
+
 function place(ir: IRLike): Geo {
   const dir = ir.meta?.flowDirection ?? "auto";
   const lr = () => {
@@ -491,8 +585,9 @@ function place(ir: IRLike): Geo {
   if (dir === "lr") return lr() ?? compute(ir);
   const tb = compute(ir);
   if (dir !== "auto" || ir.nodes.length < 8 || fitScale(tb) >= 0.85) return tb;
+  const base = foldCandidate(ir, tb) ?? tb;
   const alt = lr();
-  return alt && fitScale(alt) > fitScale(tb) * 1.2 ? alt : tb;
+  return alt && fitScale(alt) > fitScale(base) * 1.2 ? alt : base;
 }
 
 function applyPins(ir: IRLike, geo: Geo): Geo {

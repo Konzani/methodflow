@@ -1,7 +1,7 @@
 export const LIMITS = {
-  freeNodes: [8, 18],
-  proNodes: [10, 24],
-  softMaxNodes: 30,
+  freeNodes: [8, 16],
+  proNodes: [12, 20],
+  softMaxNodes: 26,
   minRichNodes: 8,
   groups: [2, 7],
   groupsTypical: [3, 5],
