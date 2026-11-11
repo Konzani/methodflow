@@ -2,7 +2,7 @@ import type{IR,Method,Shape}from"@/lib/core/ir";
 import{layout}from"@/lib/core/layout";
 type NT=[string,string,Shape,string];
 type ET=[string,string,string?];
-const mk=(title:string,methodology:Method,groups:string[],nodes:NT[],edges:ET[]):IR=>({version:"1.0",meta:{title,methodology,caption:title},groups:groups.map((label,i)=>({id:"g"+(i+1),label})),nodes:nodes.map(([id,label,shape,g])=>({id,label,shape,groupId:g||undefined})),edges:edges.map(([source,target,label],i)=>({id:"e"+(i+1),source,target,label}))});
+const mk=(title:string,methodology:Method,groups:string[],nodes:NT[],edges:ET[]):IR=>({version:"1.1",meta:{title,methodology,caption:title,paletteId:"mono",density:"balanced",flowDirection:"auto"},groups:groups.map((label,i)=>({id:"g"+(i+1),label})),nodes:nodes.map(([id,label,shape,g])=>({id,label,shape,groupId:g||undefined})),edges:edges.map(([source,target,label],i)=>({id:"e"+(i+1),source,target,label}))});
 
 export type Template={slug:string;title:string;method:Method;summary:string;when:string;ir:IR};
 

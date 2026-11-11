@@ -1297,6 +1297,10 @@ function Inner() {
               <div style={{ fontSize: 12, lineHeight: 1.4, margin: "6px 0", color: pinfo.level === "small" ? "#b45309" : "inherit" }}>
                 Text prints at about {pinfo.pt.toFixed(1)} pt on this page.
                 {pinfo.level === "small" ? " That is hard to read in a thesis." : ""}
+                {" "}
+                <button type="button" className="btn" disabled={busy} onClick={() => s.fitToPage()}>
+                  Fit to one page
+                </button>
                 {pinfo.nodes > 16 ? (
                   <>
                     {" "}

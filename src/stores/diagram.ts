@@ -12,7 +12,7 @@ interface S{
   setPalette:(id:PaletteId)=>void;setDensity:(d:Density)=>void;setFlowDirection:(f:FlowDirection)=>void;
   setNodeColor:(id:string,p:{fill?:string;stroke?:string;text?:string})=>void;
   setGroupColor:(id:string,color:string|undefined)=>void;
-  addNode:(s:Shape)=>void;remove:(n:string[],e:string[])=>void;connect:(a:string,b:string)=>void;move:(id:string,x:number,y:number)=>void;relayout:()=>void;
+  addNode:(s:Shape)=>void;remove:(n:string[],e:string[])=>void;connect:(a:string,b:string)=>void;move:(id:string,x:number,y:number)=>void;relayout:()=>void;fitToPage:()=>void;
   addGroup:(l:string)=>void;removeGroup:(id:string)=>void
 }
 
@@ -44,6 +44,7 @@ export const useDiagram=create<S>((set,get)=>({
   connect:(a,b)=>{const{ir,commit}=get();if(a===b||ir.edges.some(e=>e.source===a&&e.target===b))return;const src=ir.nodes.find(n=>n.id===a);const outs=ir.edges.filter(e=>e.source===a).length;const label=src?.shape==="decision"&&outs<2?(outs===0?"Yes":"No"):undefined;commit(layout({...ir,edges:[...ir.edges,{id:uid("e"),source:a,target:b,label}]}))},
   move:(id,x,y)=>{const{ir,commit}=get();commit(layout({...ir,nodes:ir.nodes.map(n=>n.id===id?{...n,x,y,pinned:true}:n)}))},
   relayout:()=>{const{ir,commit}=get();commit(layout({...ir,nodes:ir.nodes.map(n=>({...n,pinned:undefined}))}));set(s=>({rev:s.rev+1}))},
+  fitToPage:()=>{const{ir,commit}=get();const next={...ir,meta:{...ir.meta,flowDirection:"auto" as FlowDirection,density:"balanced" as Density},nodes:ir.nodes.map(n=>({...n,pinned:undefined}))};commit(layout(next));set(s=>({rev:s.rev+1}))},
   addGroup:l=>{const{ir,commit}=get();if(ir.groups.length>=8||!l.trim())return;commit(layout({...ir,groups:[...ir.groups,{id:uid("g"),label:l.trim().slice(0,60)}]}))},
   removeGroup:id=>{const{ir,commit}=get();commit(layout({...ir,groups:ir.groups.filter(g=>g.id!==id),nodes:ir.nodes.map(n=>n.groupId===id?{...n,groupId:undefined}:n)}))},
 }));

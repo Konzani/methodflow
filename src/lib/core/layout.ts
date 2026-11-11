@@ -20,15 +20,15 @@ type Geo = {
   height: number;
 };
 
-const HEADER = 28;
-const MARGIN = 24;
+const HEADER = 24;
+const MARGIN = 18;
 const CHAR = 6.9;
 const LINE = 16;
 
 const METRICS = {
-  spacious: { vgap: 52, colGap: 76, pad: 22, groupGap: 36 },
-  balanced: { vgap: 44, colGap: 68, pad: 20, groupGap: 30 },
-  compact: { vgap: 34, colGap: 60, pad: 18, groupGap: 24 },
+  spacious: { vgap: 44, colGap: 68, pad: 20, groupGap: 28 },
+  balanced: { vgap: 36, colGap: 60, pad: 18, groupGap: 24 },
+  compact: { vgap: 30, colGap: 54, pad: 16, groupGap: 20 },
 } as const;
 
 const NBSP = " ";
@@ -78,9 +78,52 @@ export function sizeOf(n: INode): { w: number; h: number } {
 const NEG = /^(no|fail\w*|exclu\w*|reject\w*|deni\w*|denied|not|inelig\w*|below|unmet|invalid|retry|insufficient)\b/i;
 const NONE = "__none";
 
+/**
+ * Effective phase membership for layout.
+ *
+ * Models sometimes omit `groupId` for one or two nodes. Treating those nodes as a
+ * top-level pseudo-phase widens and lengthens the diagram and breaks the phase boxes.
+ * Instead, attach an ungrouped node to the phase of its predecessor (then its
+ * successor, then a neighbour), so it is laid out inside the workflow it belongs to.
+ * The IR itself is left untouched.
+ */
+function effectiveGroups(ir: IRLike): Map<string, string | undefined> {
+  const known = new Set(ir.groups.map((g) => g.id));
+  const out = new Map<string, string | undefined>(
+    ir.nodes.map((n) => [n.id, n.groupId && known.has(n.groupId) ? n.groupId : undefined])
+  );
+  const preds = new Map<string, string[]>();
+  const succs = new Map<string, string[]>();
+  for (const e of ir.edges) {
+    if (!succs.has(e.source)) succs.set(e.source, []);
+    if (!preds.has(e.target)) preds.set(e.target, []);
+    succs.get(e.source)!.push(e.target);
+    preds.get(e.target)!.push(e.source);
+  }
+  const mode = (ids: string[] | undefined): string | undefined => {
+    const votes = new Map<string, number>();
+    for (const id of ids ?? []) {
+      const g = out.get(id);
+      if (g) votes.set(g, (votes.get(g) ?? 0) + 1);
+    }
+    let best: string | undefined;
+    let count = 0;
+    for (const [g, c] of votes) if (c > count) { best = g; count = c; }
+    return best;
+  };
+  for (let pass = 0; pass < 2; pass++) {
+    for (const n of ir.nodes) {
+      if (out.get(n.id)) continue;
+      out.set(n.id, mode(preds.get(n.id)) ?? mode(succs.get(n.id)));
+    }
+  }
+  return out;
+}
+
 export function compute(ir: IRLike): Geo {
   const M = METRICS[(ir.meta?.density as keyof typeof METRICS) ?? "balanced"] ?? METRICS.balanced;
   const nodes = ir.nodes;
+  const eff = effectiveGroups(ir);
   const idx = new Map(nodes.map((n, i) => [n.id, i]));
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const edges = ir.edges.filter((e) => idx.has(e.source) && idx.has(e.target) && e.source !== e.target);
@@ -123,7 +166,7 @@ export function compute(ir: IRLike): Geo {
   const rank = new Map(order.map((id, i) => [id, i]));
 
   const gdefs = new Map(ir.groups.map((g, i) => [g.id, { g, i }]));
-  const gidOf = (n: INode) => (n.groupId && gdefs.has(n.groupId) ? n.groupId : NONE);
+  const gidOf = (n: INode) => (n.groupId && gdefs.has(n.groupId) ? n.groupId : eff.get(n.id) ?? NONE);
   const members = new Map<string, INode[]>();
   for (const n of nodes) {
     const k = gidOf(n);
@@ -300,17 +343,18 @@ export function compute(ir: IRLike): Geo {
   };
 
   const routeBack = (e: IEdge): P[] => {
-    const s = nb(e.source); const t = nb(e.target);
-    const global = gi.get(e.source) !== gi.get(e.target);
     const k = chIdx.get(e.id) ?? 0;
+    const global = gi.get(e.source) !== gi.get(e.target);
     const gx = global ? gOut(k) : gIn(k);
-    const a = right(s);
-    if (nodeById.get(e.target)!.shape === "decision") {
-      const my = entryY(e.target);
-      return [a, { x: gx, y: a.y }, { x: gx, y: my }, { x: t.cx, y: my }, top(t)];
-    }
-    const b = right(t);
-    return [a, { x: gx, y: a.y }, { x: gx, y: b.y }, b];
+    const sb = nodeBox.get(e.source)!;
+    const tb = nodeBox.get(e.target)!;
+    // Route revision/back edges around nodes through the side gutter, instead of a
+    // fixed three-segment path that can cut straight through intervening steps.
+    const obstacles = nodes.filter((o) => o.id !== e.source && o.id !== e.target).map((o) => nodeBox.get(o.id)!);
+    const ys = [...new Set([...rowTop.values()])].map((y) => y - M.vgap / 2);
+    ys.push(entryY(e.target));
+    const r = route(sb, tb, obstacles, [gx, boxR + 18 + 14 * k], ys, ["r", "b"], ["t", "l", "r", "b"]);
+    return r.points;
   };
 
   const edgesOut = new Map<string, { points: P[]; label?: LabelPos }>();
@@ -401,13 +445,15 @@ function placeLR(ir: IRLike): Geo {
   const g = new dagre.graphlib.Graph({ compound: true });
   g.setGraph({ rankdir: "LR", nodesep: M.vgap + M.pad + 14, ranksep: M.colGap + M.pad, marginx: 0, marginy: 0 });
   g.setDefaultEdgeLabel(() => ({}));
-  const used = new Set(ir.nodes.map((n) => n.groupId).filter(Boolean) as string[]);
+  const eff = effectiveGroups(ir);
+  const used = new Set(ir.nodes.map((n) => eff.get(n.id)).filter(Boolean) as string[]);
   const gids = new Set(ir.groups.filter((x) => used.has(x.id)).map((x) => x.id));
   gids.forEach((id) => g.setNode("g:" + id, {}));
   for (const n of ir.nodes) {
     const s = size.get(n.id)!;
     g.setNode(n.id, { width: s.w, height: s.h });
-    if (n.groupId && gids.has(n.groupId)) g.setParent(n.id, "g:" + n.groupId);
+    const gid = eff.get(n.id);
+    if (gid && gids.has(gid)) g.setParent(n.id, "g:" + gid);
   }
   for (const e of edges) g.setEdge(e.source, e.target);
   dagre.layout(g);
@@ -422,7 +468,7 @@ function placeLR(ir: IRLike): Geo {
   const groupBox = new Map<string, Box>();
   const nodeGroup = new Map<string, string>();
   for (const id of gids) {
-    const ms = ir.nodes.filter((n) => n.groupId === id);
+    const ms = ir.nodes.filter((n) => eff.get(n.id) === id);
     const bs = ms.map((n) => nodeBox.get(n.id)!);
     const x0 = Math.min(...bs.map((b) => b.x)) - M.pad;
     const y0 = Math.min(...bs.map((b) => b.y)) - M.pad - HEADER;
@@ -484,33 +530,46 @@ function splits(n: number, k: number): number[][] {
 }
 
 export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
-  const order = [...geo.groups.keys()].sort((a, b) => geo.groups.get(a)!.y - geo.groups.get(b)!.y);
-  if (order.length < k || ir.nodes.some((n) => !n.groupId || !geo.groups.has(n.groupId))) return null;
-  const gap = 56;
+  // A node with no groupId is still a layout segment (unboxed, no phase header).
+  // Treating it as an extra segment keeps folding available instead of silently
+  // disabling page fitting for a whole diagram.
+  const segOf = (id: string) => geo.nodeGroup.get(id) ?? NONE;
+  // Only nodes that no boxed phase claimed remain ungrouped; nodes the model forgot
+  // to group are attached to a phase by effectiveGroups() before this point.
+  const unplaced = ir.nodes.filter((n) => !geo.nodeGroup.has(n.id));
+  const segTop = (seg: string) =>
+    seg === NONE
+      ? Math.min(...unplaced.map((n) => geo.nodes.get(n.id)?.y ?? 0)) - 8
+      : geo.groups.get(seg)!.y;
+  const order = [...geo.groups.keys(), ...(unplaced.length ? [NONE] : [])].sort((a, b) => segTop(a) - segTop(b));
+  if (order.length < k) return null;
+  const gap = 48;
 
-  const extent = new Map<string, { x0: number; x1: number }>();
+  const extent = new Map<string, { x0: number; x1: number; y0: number; h: number }>();
   const tight = new Map<string, Box>();
   const PADX = 20;
-  for (const gid of order) {
-    const b = geo.groups.get(gid)!;
-    const members = [...geo.nodeGroup].filter(([, g]) => g === gid).map(([id]) => geo.nodes.get(id)!);
+  for (const seg of order) {
+    const members = ir.nodes.filter((n) => segOf(n.id) === seg).map((n) => geo.nodes.get(n.id)!).filter(Boolean);
+    if (!members.length) return null;
+    const b = seg === NONE ? undefined : geo.groups.get(seg);
     let x0 = Math.min(...members.map((m) => m.x)) - PADX;
     let x1 = Math.max(...members.map((m) => m.x + m.w)) + PADX;
+    let y0 = b ? b.y : Math.min(...members.map((m) => m.y)) - 8;
+    let bottom = b ? b.y + b.h : Math.max(...members.map((m) => m.y + m.h)) + 8;
     for (const [id, [s, t]] of geo.ends) {
-      if (geo.nodeGroup.get(s) !== gid || geo.nodeGroup.get(t) !== gid) continue;
+      if (segOf(s) !== seg || segOf(t) !== seg) continue;
       for (const p of geo.edges.get(id)!.points) {
         x0 = Math.min(x0, p.x);
         x1 = Math.max(x1, p.x);
+        y0 = Math.min(y0, p.y);
+        bottom = Math.max(bottom, p.y);
       }
     }
-    extent.set(gid, { x0, x1 });
-    tight.set(gid, { x: x0, y: b.y, w: x1 - x0, h: b.h });
+    extent.set(seg, { x0, x1, y0, h: bottom - y0 });
+    if (b) tight.set(seg, { x: x0, y: y0, w: x1 - x0, h: bottom - y0 });
   }
-  const heightOf = (ids: string[]) => {
-    const f = geo.groups.get(ids[0])!;
-    const l = geo.groups.get(ids[ids.length - 1])!;
-    return l.y + l.h - f.y;
-  };
+  const heightOf = (ids: string[]) =>
+    Math.max(...ids.map((g) => extent.get(g)!.y0 + extent.get(g)!.h)) - Math.min(...ids.map((g) => extent.get(g)!.y0));
   const widthOf = (ids: string[]) => Math.max(...ids.map((g) => extent.get(g)!.x1)) - Math.min(...ids.map((g) => extent.get(g)!.x0));
 
   let best: string[][] | null = null;
@@ -528,36 +587,38 @@ export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
   }
   if (!best) return null;
 
-  const colOf = new Map<string, number>();
   const shift = new Map<string, P>();
   const colX: number[] = [];
   let cursor = MARGIN;
-  best.forEach((ids, ci) => {
+  best.forEach((ids) => {
     const left = Math.min(...ids.map((g) => extent.get(g)!.x0));
-    const top = geo.groups.get(ids[0])!.y;
+    const top = Math.min(...ids.map((g) => extent.get(g)!.y0));
     colX.push(cursor);
-    ids.forEach((gid) => {
-      colOf.set(gid, ci);
-      shift.set(gid, { x: cursor - left, y: MARGIN - top });
-    });
+    ids.forEach((seg) => shift.set(seg, { x: cursor - left, y: MARGIN - top }));
     cursor += widthOf(ids) + gap;
   });
   const mv = (b: Box, d: P): Box => ({ ...b, x: b.x + d.x, y: b.y + d.y });
   const nodes = new Map<string, Box>();
-  for (const [id, b] of geo.nodes) nodes.set(id, mv(b, shift.get(geo.nodeGroup.get(id)!)!));
+  for (const [id, b] of geo.nodes) nodes.set(id, mv(b, shift.get(segOf(id))!));
   const groups = new Map<string, Box>();
-  for (const [id] of geo.groups) groups.set(id, mv(tight.get(id)!, shift.get(id)!));
+  for (const [seg] of geo.groups) groups.set(seg, mv(tight.get(seg)!, shift.get(seg)!));
+  const placed = new Map<string, { x0: number; y0: number; x1: number; y1: number }>();
+  for (const seg of order) {
+    const e = extent.get(seg)!;
+    const d = shift.get(seg)!;
+    placed.set(seg, { x0: e.x0 + d.x, y0: e.y0 + d.y, x1: e.x1 + d.x, y1: e.y0 + d.y + e.h });
+  }
 
   const gutters: number[] = [];
   for (let ci = 1; ci < best.length; ci++) gutters.push(colX[ci] - gap / 2);
   const ys: number[] = [MARGIN / 2];
   for (const ids of best)
     for (let i = 0; i + 1 < ids.length; i++) {
-      const a = groups.get(ids[i])!;
-      const b = groups.get(ids[i + 1])!;
-      ys.push((a.y + a.h + b.y) / 2);
+      const a = placed.get(ids[i])!;
+      const b = placed.get(ids[i + 1])!;
+      ys.push((a.y1 + b.y0) / 2);
     }
-  ys.push(Math.max(...[...groups.values()].map((g) => g.y + g.h)) + 14);
+  ys.push(Math.max(...[...placed.values()].map((p) => p.y1)) + 14);
 
   const nodeById = new Map(ir.nodes.map((n) => [n.id, n]));
   const taken = new Map<string, Set<string>>();
@@ -565,8 +626,8 @@ export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
   const edges = new Map<string, { points: P[]; label?: LabelPos }>();
   const labelled = new Set(ir.edges.filter((e) => e.label).map((e) => e.id));
   for (const [id, [s, t]] of geo.ends) {
-    const gs = geo.nodeGroup.get(s)!;
-    const gt = geo.nodeGroup.get(t)!;
+    const gs = segOf(s);
+    const gt = segOf(t);
     let pts: P[];
     if (gs === gt) {
       const d = shift.get(gs)!;
@@ -596,7 +657,7 @@ export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
 
 export function foldCandidate(ir: IRLike, tb: Geo): Geo | null {
   let best: Geo | null = null;
-  let bestScale = fitScale(tb) * 1.15;
+  let bestScale = fitScale(tb) * 1.1;
   const maxK = Math.min(5, new Set(ir.nodes.map((n) => n.groupId)).size);
   for (let k = 2; k <= maxK; k++) {
     const g = foldGeo(ir, tb, k);
@@ -608,17 +669,187 @@ export function foldCandidate(ir: IRLike, tb: Geo): Geo | null {
   return best;
 }
 
+/**
+ * Page-aware row folding for left-to-right flows.
+ *
+ * A plain dagre LR layout is one very wide row, which is unusable on paper. Here the
+ * phase groups keep their internal left-to-right flow but are wrapped into consecutive
+ * page-width rows; cross-row edges are re-routed orthogonally around nodes.
+ */
+export function foldRowsGeo(ir: IRLike, lr: Geo, k: number): Geo | null {
+  const PADX = 20;
+  const gap = 48;
+  const ROWGAP = 36;
+  const segOf = (id: string) => lr.nodeGroup.get(id) ?? NONE;
+  const unplaced = ir.nodes.filter((n) => !lr.nodeGroup.has(n.id));
+  const segLeft = (seg: string) =>
+    seg === NONE
+      ? Math.min(...unplaced.map((n) => lr.nodes.get(n.id)?.x ?? 0)) - 8
+      : lr.groups.get(seg)!.x;
+  const order = [...lr.groups.keys(), ...(unplaced.length ? [NONE] : [])].sort((a, b) => segLeft(a) - segLeft(b));
+  if (order.length < k) return null;
+
+  const extent = new Map<string, { x0: number; x1: number; y0: number; h: number }>();
+  for (const seg of order) {
+    const members = ir.nodes.filter((n) => segOf(n.id) === seg).map((n) => lr.nodes.get(n.id)).filter(Boolean) as Box[];
+    if (!members.length) return null;
+    const gb = seg === NONE ? undefined : lr.groups.get(seg);
+    let x0 = Math.min(...members.map((b) => b.x)) - PADX;
+    let x1 = Math.max(...members.map((b) => b.x + b.w)) + PADX;
+    let y0 = gb ? gb.y : Math.min(...members.map((b) => b.y)) - 8;
+    let bottom = gb ? gb.y + gb.h : Math.max(...members.map((b) => b.y + b.h)) + 8;
+    for (const [id, [s, t]] of lr.ends) {
+      if (segOf(s) !== seg || segOf(t) !== seg) continue;
+      for (const p of lr.edges.get(id)!.points) {
+        x0 = Math.min(x0, p.x);
+        x1 = Math.max(x1, p.x);
+        y0 = Math.min(y0, p.y);
+        bottom = Math.max(bottom, p.y);
+      }
+    }
+    extent.set(seg, { x0, x1, y0, h: bottom - y0 });
+  }
+  const widthOf = (ids: string[]) =>
+    ids.reduce((a, gid) => a + (extent.get(gid)!.x1 - extent.get(gid)!.x0), 0) + gap * Math.max(0, ids.length - 1);
+  const heightOf = (ids: string[]) => Math.max(...ids.map((gid) => extent.get(gid)!.h));
+
+  let best: string[][] | null = null;
+  let bestScore = -1;
+  for (const sp of splits(order.length, k)) {
+    let i = 0;
+    const rows = sp.map((c) => order.slice(i, (i += c)));
+    const w = Math.max(...rows.map(widthOf));
+    const h = rows.reduce((a, r) => a + heightOf(r), 0) + ROWGAP * (rows.length - 1);
+    const sc = pageScore(w + 2 * MARGIN, h + 2 * MARGIN);
+    if (sc > bestScore) {
+      bestScore = sc;
+      best = rows;
+    }
+  }
+  if (!best) return null;
+
+  const shift = new Map<string, P>();
+  const rowTop: number[] = [];
+  let cursorY = MARGIN;
+  for (const ids of best) {
+    let cursorX = MARGIN;
+    rowTop.push(cursorY);
+    for (const seg of ids) {
+      const e = extent.get(seg)!;
+      shift.set(seg, { x: cursorX - e.x0, y: cursorY - e.y0 });
+      cursorX += e.x1 - e.x0 + gap;
+    }
+    cursorY += heightOf(ids) + ROWGAP;
+  }
+
+  const mv = (b: Box, d: P): Box => ({ ...b, x: b.x + d.x, y: b.y + d.y });
+  const nodes = new Map<string, Box>();
+  for (const [id, b] of lr.nodes) nodes.set(id, mv(b, shift.get(segOf(id))!));
+  const groups = new Map<string, Box>();
+  for (const seg of lr.groups.keys()) {
+    const e = extent.get(seg)!;
+    const d = shift.get(seg)!;
+    groups.set(seg, { x: e.x0 + d.x, y: e.y0 + d.y, w: e.x1 - e.x0, h: e.h });
+  }
+  const placed = new Map<string, { x0: number; y0: number; x1: number; y1: number }>();
+  for (const seg of order) {
+    const e = extent.get(seg)!;
+    const d = shift.get(seg)!;
+    placed.set(seg, { x0: e.x0 + d.x, y0: e.y0 + d.y, x1: e.x1 + d.x, y1: e.y0 + d.y + e.h });
+  }
+
+  // Candidate channels: gutters between segments inside each row, row gutters,
+  // and outer margins. The router picks the cheapest orthogonal path through them.
+  const xs: number[] = [MARGIN / 2];
+  for (const ids of best) {
+    for (let i = 0; i + 1 < ids.length; i++) {
+      const a = placed.get(ids[i])!;
+      const b = placed.get(ids[i + 1])!;
+      xs.push((a.x1 + b.x0) / 2);
+    }
+  }
+  const ys: number[] = [MARGIN / 2];
+  for (let i = 0; i + 1 < best.length; i++) ys.push(rowTop[i] + heightOf(best[i]) + ROWGAP / 2);
+  const rightmost = Math.max(...[...placed.values()].map((p) => p.x1));
+  xs.push(rightmost + 24);
+
+  const nodeById = new Map(ir.nodes.map((n) => [n.id, n]));
+  const taken = new Map<string, Set<string>>();
+  const labelled = new Set(ir.edges.filter((e) => e.label).map((e) => e.id));
+  const edges = new Map<string, { points: P[]; label?: LabelPos }>();
+  const allExits: ("r" | "b" | "l" | "t")[] = ["r", "b", "l", "t"];
+  for (const [id, [s, t]] of lr.ends) {
+    const gs = segOf(s);
+    const gt = segOf(t);
+    let pts: P[];
+    if (gs === gt) {
+      const d = shift.get(gs)!;
+      pts = lr.edges.get(id)!.points.map((p) => ({ x: p.x + d.x, y: p.y + d.y }));
+    } else {
+      const sb = nodes.get(s)!;
+      const tb = nodes.get(t)!;
+      const obstacles = [...nodes.entries()].filter(([nid]) => nid !== s && nid !== t).map(([, b]) => b);
+      let used = taken.get(s);
+      if (nodeById.get(s)!.shape === "decision") {
+        used = used ?? new Set<string>();
+        taken.set(s, used);
+      }
+      const r = route(sb, tb, obstacles, xs, ys, used ? allExits.filter((d) => !used!.has(d)) : allExits);
+      used?.add(r.exit);
+      pts = r.points;
+    }
+    edges.set(id, { points: pts, label: labelled.has(id) ? labelAtPts(pts) : undefined });
+  }
+  return fitCanvas({ nodes, groups, nodeGroup: lr.nodeGroup, edges, ends: lr.ends, width: 0, height: 0 });
+}
+
+function rowFoldCandidate(ir: IRLike, lr: Geo): Geo | null {
+  let best: Geo | null = null;
+  let bestScale = fitScale(lr) * 1.06;
+  const maxK = Math.min(4, new Set(ir.nodes.map((n) => n.groupId)).size);
+  for (let k = 2; k <= maxK; k++) {
+    const g = foldRowsGeo(ir, lr, k);
+    if (g) {
+      const s = fitScale(g);
+      if (s > bestScale) {
+        best = g;
+        bestScale = s;
+      }
+    }
+  }
+  return best;
+}
+
 function place(ir: IRLike): Geo {
   const dir = ir.meta?.flowDirection ?? "auto";
   const lr = () => {
     try { return placeLR(ir); } catch { return null; }
   };
-  if (dir === "lr") return lr() ?? compute(ir);
   const tb = compute(ir);
+  if (dir === "lr") {
+    const l = lr() ?? tb;
+    // A raw LR flow is a single very wide row; wrap it into page-width rows when
+    // that materially improves the printed size.
+    return ir.nodes.length >= 8 && fitScale(l) < 0.8 ? rowFoldCandidate(ir, l) ?? l : l;
+  }
   if (dir !== "auto" || ir.nodes.length < 8 || fitScale(tb) >= 0.85) return tb;
-  const base = foldCandidate(ir, tb) ?? tb;
-  const alt = lr();
-  return alt && fitScale(alt) > fitScale(base) * 1.2 ? alt : base;
+  const candidates: Geo[] = [foldCandidate(ir, tb) ?? tb];
+  const l = lr();
+  if (l) {
+    candidates.push(l);
+    const rf = rowFoldCandidate(ir, l);
+    if (rf) candidates.push(rf);
+  }
+  let best = candidates[0];
+  let bestScale = fitScale(best);
+  for (const c of candidates.slice(1)) {
+    const s = fitScale(c);
+    if (s > bestScale * 1.04) {
+      best = c;
+      bestScale = s;
+    }
+  }
+  return best;
 }
 
 function applyPins(ir: IRLike, geo: Geo): Geo {
