@@ -342,27 +342,34 @@ export function compute(ir: IRLike): Geo {
     return [bottom(s), { x: s.cx, y: my }, { x: t.cx, y: my }, top(t)];
   };
 
-  const routeBack = (e: IEdge): P[] => {
+  const routeBack = (e: IEdge, avoid: [P, P][]): P[] => {
     const k = chIdx.get(e.id) ?? 0;
     const global = gi.get(e.source) !== gi.get(e.target);
     const gx = global ? gOut(k) : gIn(k);
     const sb = nodeBox.get(e.source)!;
     const tb = nodeBox.get(e.target)!;
-    // Route revision/back edges around nodes through the side gutter, instead of a
-    // fixed three-segment path that can cut straight through intervening steps.
+    // Route revision/back edges around nodes and phase boxes through the side gutter,
+    // instead of a fixed path that can cut straight through intervening steps.
     const obstacles = nodes.filter((o) => o.id !== e.source && o.id !== e.target).map((o) => nodeBox.get(o.id)!);
+    for (const [gid, gb] of groupBox) {
+      if (gid === NONE) continue;
+      if (insideRect(gb, sb) || insideRect(gb, tb)) continue;
+      obstacles.push(gb);
+    }
     const ys = [...new Set([...rowTop.values()])].map((y) => y - M.vgap / 2);
     ys.push(entryY(e.target));
-    const r = route(sb, tb, obstacles, [gx, boxR + 18 + 14 * k], ys, ["r", "b"], ["t", "l", "r", "b"]);
+    const r = route(sb, tb, obstacles, [gx, boxR + 18 + 14 * k], ys, ["r", "b"], ["t", "l", "r", "b"], { avoid });
     return r.points;
   };
 
   const edgesOut = new Map<string, { points: P[]; label?: LabelPos }>();
   const ends = new Map<string, [string, string]>();
+  const routed: [P, P][] = [];
   for (const e of edges) {
-    const pts = back.has(e.id) ? routeBack(e) : routeFwd(e);
+    const pts = back.has(e.id) ? routeBack(e, routed) : routeFwd(e);
     edgesOut.set(e.id, { points: pts, label: e.label ? labelAtPts(pts) : undefined });
     ends.set(e.id, [e.source, e.target]);
+    for (let i = 1; i < pts.length; i++) routed.push([pts[i - 1], pts[i]]);
   }
 
   const dx = MARGIN - boxL; const dy = MARGIN;
@@ -384,9 +391,45 @@ export function compute(ir: IRLike): Geo {
 }
 
 function labelAtPts(pts: P[]): LabelPos {
-  const [a, b] = pts;
-  if (a.x === b.x) return { x: a.x + 8, y: a.y + (b.y >= a.y ? 15 : -6), anchor: "start" };
-  return { x: a.x + (b.x >= a.x ? 8 : -8), y: a.y - 7, anchor: b.x >= a.x ? "start" : "end" };
+  // Anchor labels to the longest segment at its midpoint, offset perpendicular to the
+  // line. This keeps labels off the node borders and away from short exit stubs.
+  let best = 0;
+  let bestLen = -1;
+  for (let i = 1; i < pts.length; i++) {
+    const len = Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
+    if (len > bestLen) {
+      bestLen = len;
+      best = i;
+    }
+  }
+  if (best === 0) best = 1;
+  const a = pts[best - 1];
+  const b = pts[best];
+  if (a.x === b.x) return { x: a.x + 8, y: (a.y + b.y) / 2, anchor: "start" };
+  return { x: (a.x + b.x) / 2, y: a.y - 7, anchor: "middle" };
+}
+
+const insideRect = (r: Box, b: Box) => {
+  const cx = b.x + b.w / 2;
+  const cy = b.y + b.h / 2;
+  return cx > r.x && cx < r.x + r.w && cy > r.y && cy < r.y + r.h;
+};
+
+function pathHitsNodes(pts: P[], nodes: Map<string, Box>, except: Set<string>): boolean {
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    for (const [id, n] of nodes) {
+      if (except.has(id)) continue;
+      if (
+        Math.max(a.x, b.x) > n.x &&
+        Math.min(a.x, b.x) < n.x + n.w &&
+        Math.max(a.y, b.y) > n.y &&
+        Math.min(a.y, b.y) < n.y + n.h
+      ) return true;
+    }
+  }
+  return false;
 }
 
 const tidy = tidyPts;
@@ -623,19 +666,23 @@ export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
   const nodeById = new Map(ir.nodes.map((n) => [n.id, n]));
   const taken = new Map<string, Set<string>>();
   const lanes = new Map<number, number>();
+  const routed: [P, P][] = [];
   const edges = new Map<string, { points: P[]; label?: LabelPos }>();
   const labelled = new Set(ir.edges.filter((e) => e.label).map((e) => e.id));
   for (const [id, [s, t]] of geo.ends) {
     const gs = segOf(s);
     const gt = segOf(t);
-    let pts: P[];
+    let pts: P[] | null = null;
     if (gs === gt) {
       const d = shift.get(gs)!;
-      pts = geo.edges.get(id)!.points.map((p) => ({ x: p.x + d.x, y: p.y + d.y }));
-    } else {
+      const moved = geo.edges.get(id)!.points.map((p) => ({ x: p.x + d.x, y: p.y + d.y }));
+      if (!pathHitsNodes(moved, nodes, new Set([s, t]))) pts = moved;
+    }
+    if (!pts) {
       const sb = nodes.get(s)!;
       const tb = nodes.get(t)!;
       const obstacles = [...nodes.entries()].filter(([nid]) => nid !== s && nid !== t).map(([, b]) => b);
+      for (const [gid, gb] of groups) if (!insideRect(gb, sb) && !insideRect(gb, tb)) obstacles.push(gb);
       const exits: ("r" | "b" | "l" | "t")[] = ["r", "b", "l", "t"];
       let used = taken.get(s);
       if (nodeById.get(s)!.shape === "decision") {
@@ -643,7 +690,7 @@ export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
         taken.set(s, used);
       }
       const xs = gutters.map((g) => g + 10 * (lanes.get(g) ?? 0));
-      const r = route(sb, tb, obstacles, xs, ys, used ? exits.filter((x) => !used!.has(x)) : exits);
+      const r = route(sb, tb, obstacles, xs, ys, used ? exits.filter((x) => !used!.has(x)) : exits, undefined, { avoid: routed });
       used?.add(r.exit);
       gutters.forEach((g, gi) => {
         if (r.points.some((p, i) => i > 0 && p.x === xs[gi] && r.points[i - 1].x === xs[gi] && p.y !== r.points[i - 1].y)) lanes.set(g, (lanes.get(g) ?? 0) + 1);
@@ -651,6 +698,7 @@ export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
       pts = r.points;
     }
     edges.set(id, { points: pts, label: labelled.has(id) ? labelAtPts(pts) : undefined });
+    for (let i = 1; i < pts.length; i++) routed.push([pts[i - 1], pts[i]]);
   }
   return fitCanvas({ nodes, groups, nodeGroup: geo.nodeGroup, edges, ends: geo.ends, width: 0, height: 0 });
 }
@@ -776,29 +824,34 @@ export function foldRowsGeo(ir: IRLike, lr: Geo, k: number): Geo | null {
   const nodeById = new Map(ir.nodes.map((n) => [n.id, n]));
   const taken = new Map<string, Set<string>>();
   const labelled = new Set(ir.edges.filter((e) => e.label).map((e) => e.id));
+  const routed: [P, P][] = [];
   const edges = new Map<string, { points: P[]; label?: LabelPos }>();
   const allExits: ("r" | "b" | "l" | "t")[] = ["r", "b", "l", "t"];
   for (const [id, [s, t]] of lr.ends) {
     const gs = segOf(s);
     const gt = segOf(t);
-    let pts: P[];
+    let pts: P[] | null = null;
     if (gs === gt) {
       const d = shift.get(gs)!;
-      pts = lr.edges.get(id)!.points.map((p) => ({ x: p.x + d.x, y: p.y + d.y }));
-    } else {
+      const moved = lr.edges.get(id)!.points.map((p) => ({ x: p.x + d.x, y: p.y + d.y }));
+      if (!pathHitsNodes(moved, nodes, new Set([s, t]))) pts = moved;
+    }
+    if (!pts) {
       const sb = nodes.get(s)!;
       const tb = nodes.get(t)!;
       const obstacles = [...nodes.entries()].filter(([nid]) => nid !== s && nid !== t).map(([, b]) => b);
+      for (const [gid, gb] of groups) if (!insideRect(gb, sb) && !insideRect(gb, tb)) obstacles.push(gb);
       let used = taken.get(s);
       if (nodeById.get(s)!.shape === "decision") {
         used = used ?? new Set<string>();
         taken.set(s, used);
       }
-      const r = route(sb, tb, obstacles, xs, ys, used ? allExits.filter((d) => !used!.has(d)) : allExits);
+      const r = route(sb, tb, obstacles, xs, ys, used ? allExits.filter((d) => !used!.has(d)) : allExits, undefined, { avoid: routed });
       used?.add(r.exit);
       pts = r.points;
     }
     edges.set(id, { points: pts, label: labelled.has(id) ? labelAtPts(pts) : undefined });
+    for (let i = 1; i < pts.length; i++) routed.push([pts[i - 1], pts[i]]);
   }
   return fitCanvas({ nodes, groups, nodeGroup: lr.nodeGroup, edges, ends: lr.ends, width: 0, height: 0 });
 }
@@ -877,12 +930,84 @@ function applyPins(ir: IRLike, geo: Geo): Geo {
     const y1 = Math.max(gb.y + gb.h, b.y + b.h + 16);
     groups.set(gid, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
   }
+  const nodeBoxes = [...nodes.entries()];
+  const xs = [...new Set(nodeBoxes.map(([, b]) => Math.round(b.x + b.w / 2)))];
+  const ys = [...new Set(nodeBoxes.map(([, b]) => Math.round(b.y + b.h / 2)))];
+  for (const [id, [s, t]] of geo.ends) {
+    if (!touched.has(s) && !touched.has(t)) continue;
+    const sb = nodes.get(s)!;
+    const tb = nodes.get(t)!;
+    const obstacles = nodeBoxes.filter(([nid]) => nid !== s && nid !== t).map(([, b]) => b);
+    for (const [, gb] of groups) if (!insideRect(gb, sb) && !insideRect(gb, tb)) obstacles.push(gb);
+    const r = route(sb, tb, obstacles, xs, ys);
+    edges.set(id, { points: r.points, label: labelled.has(id) ? labelAtPts(r.points) : undefined });
+  }
   return fitCanvas({ ...geo, nodes, edges, groups });
+}
+
+type PortRef = { edge: string; end: "s" | "t"; node: string; side: "r" | "l" | "t" | "b"; pos: P; adj: P; coord: number };
+
+/** Give edges that meet the same node side distinct attachment points, so arrowheads do
+ *  not stack on one pixel and short stubs cannot overlap. */
+function spreadPorts(geo: Geo): Geo {
+  const refs: PortRef[] = [];
+  const sideOf = (b: Box, p: P): "r" | "l" | "t" | "b" | null => {
+    const e = 0.75;
+    if (Math.abs(p.x - (b.x + b.w)) < e) return "r";
+    if (Math.abs(p.x - b.x) < e) return "l";
+    if (Math.abs(p.y - (b.y + b.h)) < e) return "b";
+    if (Math.abs(p.y - b.y) < e) return "t";
+    return null;
+  };
+  for (const [id, [s, t]] of geo.ends) {
+    const e = geo.edges.get(id);
+    if (!e || e.points.length < 2) continue;
+    const sb = geo.nodes.get(s);
+    const tb = geo.nodes.get(t);
+    if (!sb || !tb) continue;
+    const p0 = e.points[0];
+    const p1 = e.points[1];
+    const ss = sideOf(sb, p0);
+    if (ss) refs.push({ edge: id, end: "s", node: s, side: ss, pos: p0, adj: p1, coord: ss === "r" || ss === "l" ? p0.y : p0.x });
+    const pn = e.points[e.points.length - 1];
+    const pp = e.points[e.points.length - 2];
+    const st = sideOf(tb, pn);
+    if (st) refs.push({ edge: id, end: "t", node: t, side: st, pos: pn, adj: pp, coord: st === "r" || st === "l" ? pn.y : pn.x });
+  }
+  const buckets = new Map<string, PortRef[]>();
+  for (const r of refs) {
+    const k = `${r.node}:${r.side}`;
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k)!.push(r);
+  }
+  for (const [, list] of buckets) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => a.coord - b.coord || a.edge.localeCompare(b.edge) || (a.end < b.end ? -1 : 1));
+    const b = geo.nodes.get(list[0].node)!;
+    const horizontal = list[0].side === "r" || list[0].side === "l";
+    const center = horizontal ? b.y + b.h / 2 : b.x + b.w / 2;
+    const span = horizontal ? b.h : b.w;
+    const gap = Math.min(20, Math.max(10, (span - 16) / list.length));
+    const first = center - (gap * (list.length - 1)) / 2;
+    list.forEach((r, i) => {
+      const move = first + i * gap - r.coord;
+      if (horizontal) {
+        const old = r.pos.y;
+        r.pos.y += move;
+        if (Math.abs(r.adj.y - old) < 0.001) r.adj.y += move;
+      } else {
+        const old = r.pos.x;
+        r.pos.x += move;
+        if (Math.abs(r.adj.x - old) < 0.001) r.adj.x += move;
+      }
+    });
+  }
+  return geo;
 }
 
 export function layout<T extends IRLike>(ir: T): T {
   if (!ir.nodes.length) return ir;
-  const g = applyPins(ir, place(ir));
+  const g = spreadPorts(applyPins(ir, place(ir)));
   return {
     ...ir,
     nodes: ir.nodes.map((n) => {
@@ -897,7 +1022,7 @@ export function layout<T extends IRLike>(ir: T): T {
     }),
     edges: ir.edges.map((e) => {
       const r = g.edges.get(e.id);
-      return r ? { ...e, points: r.points, labelPos: r.label } : e;
+      return r ? { ...e, points: r.points, labelPos: e.label ? labelAtPts(r.points) : undefined } : e;
     }),
     canvas: { width: g.width, height: g.height },
   } as T;

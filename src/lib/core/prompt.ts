@@ -44,8 +44,8 @@ export const EXAMPLE_JSON = JSON.stringify({
     { id: "e4", source: "n4", target: "n6", label: "Yes" },
     { id: "e5", source: "n4", target: "n5", label: "No" },
     { id: "e6", source: "n5", target: "n3" },
-    { id: "e7", source: "n6", target: "n7" },
-    { id: "e8", source: "n6", target: "n9" },
+    { id: "e7", source: "n6", target: "n7", label: "Quantitative strand" },
+    { id: "e8", source: "n6", target: "n9", label: "Qualitative strand" },
     { id: "e9", source: "n7", target: "n8" },
     { id: "e10", source: "n9", target: "n10" },
     { id: "e11", source: "n10", target: "n12", label: "Yes" },
@@ -96,9 +96,12 @@ Write it compactly, without indentation or blank lines, so that a large diagram 
   }],
   "edges": [{"id": string, "source": string, "target": string, "label": string}]
 }
-An edge label is required on both branches of every decision and must be omitted on every
-other edge. Do not output colours, palettes, density, direction, coordinates, notes or any
-other field: the application controls appearance and layout.
+An edge label is required on both branches of every decision. When a step forks into named
+branches or sub-branches, label each outgoing edge with that branch name (for example
+"Satellite evidence", "Optical sub-branch"); omit labels on ordinary sequential edges.
+Never create a process node that only describes diagram structure ("Split into …",
+"Merge …", "Combine …"). Do not output colours, palettes, density, direction, coordinates,
+notes or any other field: the application controls appearance and layout.
 
 PRIORITY ORDER
 When rules conflict, use this order:
@@ -114,6 +117,11 @@ EVIDENCE AND NON-FABRICATION
 - Never invent a sample size, count, date, threshold, result, accuracy value, significance
   level, dataset, instrument, software package, citation or completed action.
 - Preserve every stated number and attach it to the action it describes.
+- Every number, count, unit, year, percentage, threshold, sample size and named standard in the
+  source must appear verbatim in a label where it belongs (for example "12,900 km²", "30 m",
+  "85 reports", "6 gauging stations", "70%", "0.80").
+- Expand an acronym at first use when the source does (for example "height above nearest
+  drainage (HAND)"); use the acronym afterwards. Never invent an expansion the source omits.
 - If a necessary detail is missing, use a neutral process label, or a decision framed around
   the criterion being assessed; do not make up the criterion's value.
 - Do not imply that ethics approval, piloting, validation, preregistration, calibration or
@@ -224,6 +232,16 @@ PARALLEL WORK AND DEPENDENCIES
   strands run in parallel and are integrated.
 - Trials: show allocation, each substantive arm, follow-up and the analysis population when stated.
 - Iterative design and evaluation: connect a failed evaluation to the specific stage that is redone.
+
+BRANCHES, MERGES AND EDGE LABELS
+- Represent a fork with two or more outgoing edges from the step before it. Never add a "split" process step.
+- Label each fork edge with the branch or sub-branch name, 1–5 words, using the source's own terms
+  (for example "Satellite evidence", "Optical sub-branch"). Omit labels on sequential edges.
+- A merge is several incoming edges into one step. Only add a join step when it performs a real
+  action (Integrate, Compare, Pair, Overlay); it must receive an explicit edge from every
+  contributing branch.
+- For three or more named streams, fork from one step directly into each stream's first step,
+  with one labelled edge per stream.
 
 DECISION GATES
 - Use a decision only for a real choice, eligibility test, quality gate, approval, screening or
@@ -401,6 +419,10 @@ IDS AND STRUCTURE
 - When a node is removed, remove or repair every edge that touches it.
 - Every groupId must refer to an existing group. Keep each group's nodes consecutive.
 - Keep the language and spelling variant of the existing labels.
+- Never introduce "split/merge" process nodes. If the graph forks into branches, label the
+  outgoing branch edges with the branch names. If a merge is requested, connect the real join
+  step from every contributing branch.
+- Preserve every number already present in the graph and add any number the instruction supplies.
 
 DECISIONS AND LOOPS
 - Every decision has exactly two outgoing edges, both labelled to fit the question (Yes/No,

@@ -4,6 +4,7 @@ export type Dir = "r" | "l" | "t" | "b";
 
 const STUB = 14;
 const PAD = 5;
+const CROSS_PENALTY = 55;
 
 export function tidyPts(pts: Pt[]): Pt[] {
   const out: Pt[] = [];
@@ -36,19 +37,44 @@ const hits = (a: Pt, b: Pt, r: Rect, pad: number) =>
   Math.max(a.y, b.y) > r.y - pad &&
   Math.min(a.y, b.y) < r.y + r.h + pad;
 
-function score(path: Pt[], s: Rect, t: Rect, obstacles: Rect[], penalty: number): number {
+const properCross = (a: Pt, b: Pt, c: Pt, d: Pt) => {
+  // Segments from the same orthogonal grid share a coordinate at real crossings; ignore
+  // touches/endpoints so shared ports do not count as crossings.
+  const orient = (p: Pt, q: Pt, r: Pt) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const o1 = orient(a, b, c);
+  const o2 = orient(a, b, d);
+  const o3 = orient(c, d, a);
+  const o4 = orient(c, d, b);
+  return ((o1 > 0 && o2 < 0) || (o1 < 0 && o2 > 0)) && ((o3 > 0 && o4 < 0) || (o3 < 0 && o4 > 0));
+};
+
+const segmentsOf = (pts: Pt[]): [Pt, Pt][] => {
+  const out: [Pt, Pt][] = [];
+  for (let i = 1; i < pts.length; i++) out.push([pts[i - 1], pts[i]]);
+  return out;
+};
+
+export type RouteOpts = {
+  /** Segments of already-routed edges; crossing them is penalised (not forbidden). */
+  avoid?: [Pt, Pt][];
+};
+
+function score(path: Pt[], s: Rect, t: Rect, obstacles: Rect[], penalty: number, avoid: [Pt, Pt][]): number {
   let len = 0;
   let bad = 0;
-  for (let i = 1; i < path.length; i++) {
-    const a = path[i - 1];
-    const b = path[i];
+  let cross = 0;
+  const segs = segmentsOf(path);
+  for (let i = 0; i < segs.length; i++) {
+    const [a, b] = segs[i];
     len += Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-    if (i === 1 || i === path.length - 1) continue;
-    for (const o of obstacles) if (hits(a, b, o, PAD)) bad++;
-    if (hits(a, b, s, 2)) bad++;
-    if (hits(a, b, t, 2)) bad++;
+    if (i > 0 && i < segs.length - 1) {
+      for (const o of obstacles) if (hits(a, b, o, PAD)) bad++;
+      if (hits(a, b, s, 2)) bad++;
+      if (hits(a, b, t, 2)) bad++;
+    }
+    for (const [c, d] of avoid) if (properCross(a, b, c, d)) cross++;
   }
-  return len + 40 * (tidyPts(path).length - 2) + 100000 * bad + penalty;
+  return len + 40 * (tidyPts(path).length - 2) + 100000 * bad + CROSS_PENALTY * cross + penalty;
 }
 
 const EXIT_COST: Record<Dir, number> = { r: 0, b: 0, l: 25, t: 25 };
@@ -61,8 +87,10 @@ export function route(
   xs: number[],
   ys: number[],
   exits: Dir[] = ["r", "b", "l", "t"],
-  entries: Dir[] = ["t", "l", "r", "b"]
+  entries: Dir[] = ["t", "l", "r", "b"],
+  opts: RouteOpts = {}
 ): { points: Pt[]; exit: Dir } {
+  const avoid = opts.avoid ?? [];
   let best: { points: Pt[]; exit: Dir; cost: number } | null = null;
   for (const de of exits) {
     const a = port(s, de);
@@ -76,7 +104,7 @@ export function route(
       for (const c of ys) mids.push([{ x: a2.x, y: c }, { x: b2.x, y: c }]);
       for (const m of mids) {
         const raw = dedupe([a, a2, ...m, b2, b]);
-        const cost = score(raw, s, t, obstacles, EXIT_COST[de] + ENTRY_COST[dn]);
+        const cost = score(raw, s, t, obstacles, EXIT_COST[de] + ENTRY_COST[dn], avoid);
         if (!best || cost < best.cost) best = { points: tidyPts(raw), exit: de, cost };
       }
     }

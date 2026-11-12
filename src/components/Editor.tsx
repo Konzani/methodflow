@@ -36,7 +36,7 @@ import {
 } from "@/lib/core/ir";
 import { validateGraph } from "@/lib/core/validate";
 import { layout } from "@/lib/core/layout";
-import { printInfo } from "@/lib/export/print";
+import { bestPrintPlan, printInfo } from "@/lib/export/print";
 import { withStyle } from "@/lib/core/style";
 import { TEMPLATES, getTemplate } from "@/lib/templates";
 import { loadDraft, parseIR, saveDraft } from "@/lib/persist";
@@ -727,22 +727,43 @@ function Inner() {
     const d = useDiagram.getState().ir;
     const n = slug(d.meta.title);
     setMsg("");
+    let pageForExport = page;
+    let promoted = false;
+    if (k === "svg" || k === "png" || k === "pdf" || k === "docx") {
+      const plan = bestPrintPlan(d, page);
+      if (plan.pt < 6) {
+        setMsg(
+          `This figure would print labels at ${plan.pt.toFixed(1)} pt even on ${plan.page.size.toUpperCase()} ${plan.page.orientation} — too small for a thesis. Choose A3, click "Fit to one page", or simplify the diagram, then export again.`
+        );
+        return;
+      }
+      pageForExport = plan.page;
+      promoted = plan.promoted;
+      if (promoted) {
+        setPage(plan.page);
+        setMsg(
+          `Exported on ${plan.page.size.toUpperCase()} ${plan.page.orientation}: labels print at ${plan.pt.toFixed(1)} pt. ${plan.reason}`
+        );
+      } else if (plan.pt < 7) {
+        setMsg(`Labels print at ${plan.pt.toFixed(1)} pt — just under the 7 pt thesis threshold. A3 or "Fit to one page" gives a larger figure.`);
+      }
+    }
     try {
       if (k === "svg") {
-        download(new Blob([toSVG(d, page.theme, page.font, undefined, free).svg], { type: "image/svg+xml" }), n + ".svg");
+        download(new Blob([toSVG(d, pageForExport.theme, pageForExport.font, undefined, free).svg], { type: "image/svg+xml" }), n + ".svg");
         if (free) setTimeout(() => openUpgrade("watermark"), 800);
       } else if (k === "png") {
-        download((await toPng(d, page, free)).blob, n + ".png");
+        download((await toPng(d, pageForExport, free)).blob, n + ".png");
         if (free) setTimeout(() => openUpgrade("watermark"), 800);
       } else if (k === "pdf") {
-        download(await toPdf(d, page, free), n + ".pdf");
+        download(await toPdf(d, pageForExport, free), n + ".pdf");
         if (free) setTimeout(() => openUpgrade("watermark"), 800);
-      } else if (k === "docx") download(await toDocx(d, page, free), n + ".docx");
+      } else if (k === "docx") download(await toDocx(d, pageForExport, free), n + ".docx");
       else if (k === "json") download(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }), n + ".methodflow.json");
       else if (k === "mermaid") setCode({ title: "Mermaid", text: toMermaid(d) });
       else if (k === "tikz") setCode({ title: "LaTeX (TikZ)", text: toTikz(d) });
     } catch {
-      setMsg("Export failed. Try PNG or SVG.");
+      setMsg(promoted ? `Export failed after switching to ${pageForExport.size.toUpperCase()} ${pageForExport.orientation}. Try PNG or SVG.` : "Export failed. Try PNG or SVG.");
     }
   }
 
@@ -1351,6 +1372,16 @@ function Inner() {
                   <option value="serif">Serif</option>
                 </select>
               </label>
+              <button
+                type="button"
+                className="btn"
+                style={{ gridColumn: "1 / -1", marginTop: 2 }}
+                onClick={() =>
+                  setPage({ ...page, size: "a4", orientation: "auto", margin: 20, fit: "fit", dpi: 300, font: "serif", theme: "mono" })
+                }
+              >
+                Thesis preset (A4, serif, mono)
+              </button>
             </div>
 
             <h2 style={{ marginTop: 16 }}>Phases</h2>

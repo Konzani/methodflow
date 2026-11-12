@@ -212,7 +212,20 @@ export async function generate(a: {
     deadline,
     system: systemPrompt(isPro),
     user: userMsg(a.method, a.text, a.extra),
-    soft: isPro ? (ir) => qualityIssues(ir, { method: methodOf(ir), rich, source }) : undefined,
+    soft: (ir) => {
+      const issues = isPro ? qualityIssues(ir, { method: methodOf(ir), rich, source }) : [];
+      if (!isPro && a.text.trim().length >= 40) {
+        // Free tier still gets one focused polish pass when stated numbers were dropped;
+        // the explicit warning alone was not enough to keep thesis numbers in the figure.
+        const f = numberFidelity(ir, source);
+        if (f.missing.length) {
+          issues.push(
+            `Numbers stated in the source that are missing from the diagram: ${list(f.missing)}. Add each number to the label of the step it describes.`
+          );
+        }
+      }
+      return issues;
+    },
   });
 
   if (r.ir) {

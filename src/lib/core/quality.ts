@@ -24,6 +24,11 @@ const TOOL_ONLY =
 const GENERIC =
   /^(collect data|data collection|analy[sz]e data|data analysis|analy[sz]e results|methodology|results|conclusion|discussion|research design|sampling|literature review)$/i;
 
+// Labels that only describe the drawing ("Split into three evidence streams") rather than
+// the research method. A thesis figure forking should use labelled branch edges instead.
+const META_LABEL =
+  /^(split|merge|combine|branch|divide|separate|join|fork)\b[^.]*\b(branches?|streams?|sub-?branches?|paths?|strands?|workflows?)\b/i;
+
 const MIN_DECISIONS: Record<string, number> = {
   prisma: 2,
   consort: 1,
@@ -80,6 +85,21 @@ export function qualityIssues(ir: IR, o: QualityOpts): string[] {
   if (values.length) {
     out.push(
       `Nodes that are values or tool names, not actions or gates: ${quote(values)}. Fold the detail into the label of the step it belongs to, or delete the node.`
+    );
+  }
+
+  const meta = nodes.filter((n) => META_LABEL.test(n.label.trim()));
+  if (meta.length) {
+    out.push(
+      `Labels that describe the diagram instead of the method: ${quote(meta)}. Delete these steps and fork directly; put the branch name on each outgoing edge instead.`
+    );
+  }
+
+  const forks = nodes.filter((n) => n.shape !== "decision" && (outdeg.get(n.id) ?? 0) >= 2);
+  const unlabelled = forks.filter((n) => edges.filter((e) => e.source === n.id).every((e) => !e.label));
+  if (unlabelled.length) {
+    out.push(
+      `Fork steps without labelled branches: ${quote(unlabelled)}. Label each outgoing edge with the name of its branch or sub-branch.`
     );
   }
 
@@ -160,10 +180,15 @@ export function qualityIssues(ir: IR, o: QualityOpts): string[] {
   }
 
   if (o.source && o.source.trim().length >= 40) {
-    const { invented } = numberFidelity(ir, o.source);
+    const { invented, missing } = numberFidelity(ir, o.source);
     if (invented.length) {
       out.push(
         `These numbers do not appear in the user's text: ${invented.slice(0, 6).join(", ")}. Remove them or replace them with figures actually stated.`
+      );
+    }
+    if (missing.length) {
+      out.push(
+        `Numbers stated in the user's text that are missing from the diagram: ${missing.slice(0, 6).join(", ")}. Add each number to the label of the step it describes.`
       );
     }
   }
