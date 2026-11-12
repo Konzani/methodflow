@@ -53,6 +53,22 @@ export function resolvePage(page: PageSettings, svgW: number, svgH: number, rese
   return { ...page, orientation: l > p * 1.02 ? "landscape" : "portrait" };
 }
 
+/**
+ * Content boxes (in layout px, 96 dpi) for a page, with a caption reserve.
+ * Used to make the layout engine page-aware: folding/row wrapping can target the page that
+ * will actually be exported instead of assuming A4.
+ */
+export function contentBoxes(page: PageSettings, reserveMM = 14): { w: number; h: number }[] {
+  const orientations: Orientation[] = page.orientation === "auto" ? ["portrait", "landscape"] : [page.orientation];
+  return orientations.map((orientation) => {
+    const mm = pageSizeMM({ ...page, orientation });
+    return {
+      w: (mm.w - 2 * page.margin) * 96 / 25.4,
+      h: (mm.h - 2 * page.margin - reserveMM) * 96 / 25.4,
+    };
+  });
+}
+
 export function computeFit(
   svgUnitsW: number,
   svgUnitsH: number,

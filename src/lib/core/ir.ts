@@ -4,7 +4,7 @@ export const METHODS = ["quantitative", "qualitative", "mixed", "prisma", "conso
 export const REQUEST_METHODS = ["auto", ...METHODS] as const;
 export const DENSITIES =["compact", "balanced", "spacious"] as const;
 export const PALETTE_IDS = ["mono", "grayscale", "tint", "okabe-ito", "pastel", "bold"] as const;
-export const FLOW_DIRECTIONS = ["auto", "tb", "lr"] as const;
+export const FLOW_DIRECTIONS = ["auto", "tb", "lr", "branches"] as const;
 
 const id = z.string().min(1).max(40);
 const hex = z.string().regex(/^#[0-9A-Fa-f]{3,8}$/);

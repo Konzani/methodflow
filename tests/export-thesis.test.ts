@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PAGE, type PageSettings } from "@/lib/export/page";
+import { computeFit, contentBoxes, DEFAULT_PAGE, type PageSettings } from "@/lib/export/page";
+import { layout } from "@/lib/core/layout";
 import { bestPrintPlan, printInfo, printPt, printThresholds } from "@/lib/export/print";
 import { floodIR } from "./fixtures/flood";
 
@@ -54,5 +55,23 @@ describe("thesis-ready print sizing", () => {
   it("exposes the thesis and block thresholds used by the editor", () => {
     expect(printThresholds.thesis).toBe(7);
     expect(printThresholds.block).toBe(6);
+  });
+
+  it("is page-aware: layout optimises for the A3 content box it will print on", () => {
+    const a3: PageSettings = { ...DEFAULT_PAGE, size: "a3" };
+    const boxes = contentBoxes(a3);
+    expect(boxes.length).toBe(2); // auto → portrait + landscape
+    const portrait = boxes[0];
+    expect(portrait.w).toBeCloseTo((297 - 40) * 96 / 25.4, 0);
+    expect(portrait.h).toBeCloseTo((420 - 40 - 14) * 96 / 25.4, 0);
+    const laid: any = layout(floodIR, boxes);
+    const fit = computeFit(laid.canvas.width, laid.canvas.height, { ...a3, orientation: "portrait" }, 14);
+    const plainFit = computeFit(
+      (layout(floodIR) as any).canvas.width,
+      (layout(floodIR) as any).canvas.height,
+      { ...a3, orientation: "portrait" },
+      14
+    );
+    expect(fit.scale).toBeGreaterThanOrEqual(plainFit.scale);
   });
 });

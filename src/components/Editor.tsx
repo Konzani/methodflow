@@ -41,7 +41,7 @@ import { withStyle } from "@/lib/core/style";
 import { TEMPLATES, getTemplate } from "@/lib/templates";
 import { loadDraft, parseIR, saveDraft } from "@/lib/persist";
 import { toSVG, type Theme } from "@/lib/export/svg";
-import { DEFAULT_PAGE, loadPageSettings, resolvePage, savePageSettings, type PageSettings } from "@/lib/export/page";
+import { contentBoxes, DEFAULT_PAGE, loadPageSettings, resolvePage, savePageSettings, type PageSettings } from "@/lib/export/page";
 import { PALETTE_LIST, SWATCHES, getPalette } from "@/lib/core/palettes";
 import { toMermaid } from "@/lib/export/mermaid";
 import { toTikz } from "@/lib/export/tikz";
@@ -75,7 +75,7 @@ const SL: Record<Shape, string> = {
   database: "Database",
 };
 const DL: Record<Density, string> = { compact: "Compact", balanced: "Balanced", spacious: "Spacious" };
-const FL = { auto: "Auto", tb: "Top to bottom", lr: "Left to right" };
+const FL = { auto: "Auto (fit page)", tb: "Top to bottom", lr: "Left to right", branches: "Branch columns" };
 
 const GEN_STAGES = [
   { at: 0, msg: "Reading your methodology…" },
@@ -750,7 +750,7 @@ function Inner() {
     }
     try {
       if (k === "svg") {
-        download(new Blob([toSVG(d, pageForExport.theme, pageForExport.font, undefined, free).svg], { type: "image/svg+xml" }), n + ".svg");
+        download(new Blob([toSVG(d, pageForExport.theme, pageForExport.font, undefined, free, contentBoxes(pageForExport)).svg], { type: "image/svg+xml" }), n + ".svg");
         if (free) setTimeout(() => openUpgrade("watermark"), 800);
       } else if (k === "png") {
         download((await toPng(d, pageForExport, free)).blob, n + ".png");

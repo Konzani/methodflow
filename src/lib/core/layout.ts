@@ -561,9 +561,146 @@ function placeLR(ir: IRLike): Geo {
   return fitCanvas({ nodes: nodeBox, groups: groupBox, nodeGroup, edges: edgesOut, ends, width: 0, height: 0 });
 }
 
-export const pageScore = (w: number, h: number) =>
-  Math.max(Math.min(1, 642 / w, 918 / h), Math.min(1, 971 / w, 590 / h));
-const fitScale = (g: Geo) => pageScore(g.width, g.height);
+/**
+ * Dagre-based top-to-bottom layout. Its rank constraints put sibling phases that share a
+ * predecessor side by side (e.g. the satellite/terrain/ground evidence strands), which the
+ * single-column custom engine stacks vertically. Every edge is re-routed by the orthogonal
+ * router so the output keeps the clean-arrow guarantees.
+ */
+export function placeDagreTB(ir: IRLike, alignBands = false): Geo | null {
+  const M = METRICS[(ir.meta?.density as keyof typeof METRICS) ?? "balanced"] ?? METRICS.balanced;
+  const ids = new Set(ir.nodes.map((n) => n.id));
+  const edges = ir.edges.filter((e) => ids.has(e.source) && ids.has(e.target) && e.source !== e.target);
+  if (!edges.length) return null;
+  const size = new Map(ir.nodes.map((n) => [n.id, sizeOf(n)]));
+  const eff = effectiveGroups(ir);
+  const g = new dagre.graphlib.Graph({ compound: true });
+  g.setGraph({ rankdir: "TB", nodesep: M.colGap, ranksep: M.vgap + M.pad, marginx: 0, marginy: 0 });
+  g.setDefaultEdgeLabel(() => ({}));
+  const used = new Set(ir.nodes.map((n) => eff.get(n.id)).filter(Boolean) as string[]);
+  const gids = new Set(ir.groups.filter((x) => used.has(x.id)).map((x) => x.id));
+  gids.forEach((id) => g.setNode("g:" + id, {}));
+  for (const n of ir.nodes) {
+    const s = size.get(n.id)!;
+    g.setNode(n.id, { width: s.w, height: s.h });
+    const gid = eff.get(n.id);
+    if (gid && gids.has(gid)) g.setParent(n.id, "g:" + gid);
+  }
+  for (const e of edges) g.setEdge(e.source, e.target);
+  try {
+    dagre.layout(g);
+  } catch {
+    return null;
+  }
+  const nodeBox = new Map<string, Box>();
+  for (const n of ir.nodes) {
+    const p = g.node(n.id);
+    const s = size.get(n.id)!;
+    if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) return null;
+    nodeBox.set(n.id, { x: p.x - s.w / 2, y: p.y - s.h / 2, w: s.w, h: s.h });
+  }
+  const groupBox = new Map<string, Box>();
+  const nodeGroup = new Map<string, string>();
+  for (const id of gids) {
+    const ms = ir.nodes.filter((n) => eff.get(n.id) === id);
+    const bs = ms.map((n) => nodeBox.get(n.id)).filter(Boolean) as Box[];
+    if (!bs.length) continue;
+    const x0 = Math.min(...bs.map((b) => b.x)) - M.pad;
+    const y0 = Math.min(...bs.map((b) => b.y)) - M.pad - HEADER;
+    const x1 = Math.max(...bs.map((b) => b.x + b.w)) + M.pad;
+    const y1 = Math.max(...bs.map((b) => b.y + b.h)) + M.pad;
+    groupBox.set(id, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+    ms.forEach((n) => nodeGroup.set(n.id, id));
+  }
+  if (alignBands) {
+    // Align sibling phases that belong to the same vertical band (shared predecessor, no
+    // edges between them) so parallel evidence strands read as aligned columns.
+    type Band = { ids: string[]; y0: number; y1: number };
+    const bands: Band[] = [];
+    for (const [id, b] of [...groupBox.entries()].sort((a, b) => a[1].y - b[1].y)) {
+      let placed = false;
+      for (const band of bands) {
+        const overlap = Math.min(band.y1, b.y + b.h) - Math.max(band.y0, b.y);
+        if (overlap > 0.35 * Math.min(band.y1 - band.y0, b.h)) {
+          band.ids.push(id);
+          band.y0 = Math.min(band.y0, b.y);
+          band.y1 = Math.max(band.y1, b.y + b.h);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) bands.push({ ids: [id], y0: b.y, y1: b.y + b.h });
+    }
+    for (const band of bands) {
+      for (const id of band.ids) {
+        const dy = band.y0 - groupBox.get(id)!.y;
+        if (!dy) continue;
+        groupBox.get(id)!.y += dy;
+        for (const n of ir.nodes) {
+          if (eff.get(n.id) === id) nodeBox.get(n.id)!.y += dy;
+        }
+      }
+    }
+  }
+  const xs: number[] = [MARGIN / 2];
+  const gbSorted = [...groupBox.values()].sort((a, b) => a.x - b.x);
+  for (let i = 0; i + 1 < gbSorted.length; i++) {
+    const a = gbSorted[i];
+    const b = gbSorted[i + 1];
+    if (b.x - (a.x + a.w) > 8) xs.push((a.x + a.w + b.x) / 2);
+  }
+  const right = Math.max(
+    ...[...groupBox.values()].map((r) => r.x + r.w),
+    ...[...nodeBox.values()].map((b) => b.x + b.w)
+  );
+  xs.push(right + 24);
+  const bands = [...nodeBox.values()].map((b) => ({ y0: b.y, y1: b.y + b.h })).sort((a, b) => a.y0 - b.y0);
+  const ys: number[] = [MARGIN / 2];
+  let bottom = bands.length ? bands[0].y1 : 0;
+  for (let i = 1; i < bands.length; i++) {
+    if (bands[i].y0 > bottom + 8) ys.push((bottom + bands[i].y0) / 2);
+    bottom = Math.max(bottom, bands[i].y1);
+  }
+  ys.push(bottom + 14);
+
+  const nodeById = new Map(ir.nodes.map((n) => [n.id, n]));
+  const taken = new Map<string, Set<string>>();
+  const labelled = new Set(ir.edges.filter((e) => e.label).map((e) => e.id));
+  const edgesOut = new Map<string, { points: P[]; label?: LabelPos }>();
+  const ends = new Map<string, [string, string]>();
+  const routed: [P, P][] = [];
+  const allExits: ("r" | "b" | "l" | "t")[] = ["r", "b", "l", "t"];
+  for (const e of edges) {
+    const sb = nodeBox.get(e.source)!;
+    const tb = nodeBox.get(e.target)!;
+    const obstacles = [...nodeBox.entries()].filter(([id]) => id !== e.source && id !== e.target).map(([, b]) => b);
+    for (const [, gb] of groupBox) if (!insideRect(gb, sb) && !insideRect(gb, tb)) obstacles.push(gb);
+    let used = taken.get(e.source);
+    if (nodeById.get(e.source)?.shape === "decision") {
+      used = used ?? new Set<string>();
+      taken.set(e.source, used);
+    }
+    const r = route(sb, tb, obstacles, xs, ys, used ? allExits.filter((d) => !used!.has(d)) : allExits, undefined, { avoid: routed });
+    used?.add(r.exit);
+    edgesOut.set(e.id, { points: r.points, label: labelled.has(e.id) ? labelAtPts(r.points) : undefined });
+    ends.set(e.id, [e.source, e.target]);
+    for (let i = 1; i < r.points.length; i++) routed.push([r.points[i - 1], r.points[i]]);
+  }
+  return fitCanvas({ nodes: nodeBox, groups: groupBox, nodeGroup, edges: edgesOut, ends, width: 0, height: 0 });
+}
+
+export type FitBox = { w: number; h: number };
+
+/**
+ * Page-fit score. Without a hint it targets the A4 content box in either orientation
+ * (the historical behaviour). Callers that know the export page pass one or more content
+ * boxes in px so folding/row-wrapping optimises for the page actually being printed.
+ */
+export const pageScore = (w: number, h: number, boxes?: FitBox[]) =>
+  boxes && boxes.length
+    ? Math.max(...boxes.map((b) => Math.min(1, b.w / w, b.h / h)))
+    : Math.max(Math.min(1, 642 / w, 918 / h), Math.min(1, 971 / w, 590 / h));
+const fitScale = (g: Geo, boxes?: FitBox[]) => pageScore(g.width, g.height, boxes);
 
 function splits(n: number, k: number): number[][] {
   if (k === 1) return [[n]];
@@ -572,7 +709,7 @@ function splits(n: number, k: number): number[][] {
   return out;
 }
 
-export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
+export function foldGeo(ir: IRLike, geo: Geo, k: number, boxes?: FitBox[]): Geo | null {
   // A node with no groupId is still a layout segment (unboxed, no phase header).
   // Treating it as an extra segment keeps folding available instead of silently
   // disabling page fitting for a whole diagram.
@@ -622,7 +759,7 @@ export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
     const cols = sp.map((c) => order.slice(i, (i += c)));
     const w = cols.reduce((a, c) => a + widthOf(c), 0) + gap * (cols.length - 1);
     const h = Math.max(...cols.map(heightOf));
-    const sc = pageScore(w + 2 * MARGIN, h + 2 * MARGIN);
+    const sc = pageScore(w + 2 * MARGIN, h + 2 * MARGIN, boxes);
     if (sc > bestScore) {
       bestScore = sc;
       best = cols;
@@ -703,15 +840,15 @@ export function foldGeo(ir: IRLike, geo: Geo, k: number): Geo | null {
   return fitCanvas({ nodes, groups, nodeGroup: geo.nodeGroup, edges, ends: geo.ends, width: 0, height: 0 });
 }
 
-export function foldCandidate(ir: IRLike, tb: Geo): Geo | null {
+export function foldCandidate(ir: IRLike, tb: Geo, boxes?: FitBox[]): Geo | null {
   let best: Geo | null = null;
-  let bestScale = fitScale(tb) * 1.1;
+  let bestScale = fitScale(tb, boxes) * 1.1;
   const maxK = Math.min(5, new Set(ir.nodes.map((n) => n.groupId)).size);
   for (let k = 2; k <= maxK; k++) {
-    const g = foldGeo(ir, tb, k);
-    if (g && fitScale(g) > bestScale) {
+    const g = foldGeo(ir, tb, k, boxes);
+    if (g && fitScale(g, boxes) > bestScale) {
       best = g;
-      bestScale = fitScale(g);
+      bestScale = fitScale(g, boxes);
     }
   }
   return best;
@@ -724,7 +861,7 @@ export function foldCandidate(ir: IRLike, tb: Geo): Geo | null {
  * phase groups keep their internal left-to-right flow but are wrapped into consecutive
  * page-width rows; cross-row edges are re-routed orthogonally around nodes.
  */
-export function foldRowsGeo(ir: IRLike, lr: Geo, k: number): Geo | null {
+export function foldRowsGeo(ir: IRLike, lr: Geo, k: number, boxes?: FitBox[]): Geo | null {
   const PADX = 20;
   const gap = 48;
   const ROWGAP = 36;
@@ -768,7 +905,7 @@ export function foldRowsGeo(ir: IRLike, lr: Geo, k: number): Geo | null {
     const rows = sp.map((c) => order.slice(i, (i += c)));
     const w = Math.max(...rows.map(widthOf));
     const h = rows.reduce((a, r) => a + heightOf(r), 0) + ROWGAP * (rows.length - 1);
-    const sc = pageScore(w + 2 * MARGIN, h + 2 * MARGIN);
+    const sc = pageScore(w + 2 * MARGIN, h + 2 * MARGIN, boxes);
     if (sc > bestScore) {
       bestScore = sc;
       best = rows;
@@ -856,14 +993,14 @@ export function foldRowsGeo(ir: IRLike, lr: Geo, k: number): Geo | null {
   return fitCanvas({ nodes, groups, nodeGroup: lr.nodeGroup, edges, ends: lr.ends, width: 0, height: 0 });
 }
 
-function rowFoldCandidate(ir: IRLike, lr: Geo): Geo | null {
+function rowFoldCandidate(ir: IRLike, lr: Geo, boxes?: FitBox[]): Geo | null {
   let best: Geo | null = null;
-  let bestScale = fitScale(lr) * 1.06;
+  let bestScale = fitScale(lr, boxes) * 1.06;
   const maxK = Math.min(4, new Set(ir.nodes.map((n) => n.groupId)).size);
   for (let k = 2; k <= maxK; k++) {
-    const g = foldRowsGeo(ir, lr, k);
+    const g = foldRowsGeo(ir, lr, k, boxes);
     if (g) {
-      const s = fitScale(g);
+      const s = fitScale(g, boxes);
       if (s > bestScale) {
         best = g;
         bestScale = s;
@@ -873,7 +1010,7 @@ function rowFoldCandidate(ir: IRLike, lr: Geo): Geo | null {
   return best;
 }
 
-function place(ir: IRLike): Geo {
+function place(ir: IRLike, boxes?: FitBox[]): Geo {
   const dir = ir.meta?.flowDirection ?? "auto";
   const lr = () => {
     try { return placeLR(ir); } catch { return null; }
@@ -883,20 +1020,26 @@ function place(ir: IRLike): Geo {
     const l = lr() ?? tb;
     // A raw LR flow is a single very wide row; wrap it into page-width rows when
     // that materially improves the printed size.
-    return ir.nodes.length >= 8 && fitScale(l) < 0.8 ? rowFoldCandidate(ir, l) ?? l : l;
+    return ir.nodes.length >= 8 && fitScale(l, boxes) < 0.8 ? rowFoldCandidate(ir, l, boxes) ?? l : l;
   }
-  if (dir !== "auto" || ir.nodes.length < 8 || fitScale(tb) >= 0.85) return tb;
-  const candidates: Geo[] = [foldCandidate(ir, tb) ?? tb];
+  if (dir === "branches") {
+    // Clarity-first option: parallel phases as aligned columns, all edges re-routed.
+    return placeDagreTB(ir, true) ?? tb;
+  }
+  if (dir !== "auto" || ir.nodes.length < 8 || fitScale(tb, boxes) >= 0.85) return tb;
+  const candidates: Geo[] = [foldCandidate(ir, tb, boxes) ?? tb];
+  const dg = placeDagreTB(ir);
+  if (dg) candidates.push(dg);
   const l = lr();
   if (l) {
     candidates.push(l);
-    const rf = rowFoldCandidate(ir, l);
+    const rf = rowFoldCandidate(ir, l, boxes);
     if (rf) candidates.push(rf);
   }
   let best = candidates[0];
-  let bestScale = fitScale(best);
+  let bestScale = fitScale(best, boxes);
   for (const c of candidates.slice(1)) {
-    const s = fitScale(c);
+    const s = fitScale(c, boxes);
     if (s > bestScale * 1.04) {
       best = c;
       bestScale = s;
@@ -1005,9 +1148,9 @@ function spreadPorts(geo: Geo): Geo {
   return geo;
 }
 
-export function layout<T extends IRLike>(ir: T): T {
+export function layout<T extends IRLike>(ir: T, boxes?: FitBox[]): T {
   if (!ir.nodes.length) return ir;
-  const g = spreadPorts(applyPins(ir, place(ir)));
+  const g = spreadPorts(applyPins(ir, place(ir, boxes)));
   return {
     ...ir,
     nodes: ir.nodes.map((n) => {

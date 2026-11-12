@@ -31,8 +31,8 @@ function shape(n: N, x: number, y: number, w: number, h: number, fill: string, s
   }
 }
 
-export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", paletteOverride?: Palette, watermark = false) {
-  const laidOut = layout(src) as any;
+export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", paletteOverride?: Palette, watermark = false, boxes?: { w: number; h: number }[]) {
+  const laidOut = layout(src, boxes) as any;
   const W = laidOut.canvas.width;
   const H = laidOut.canvas.height;
 

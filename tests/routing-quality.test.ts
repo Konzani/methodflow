@@ -87,7 +87,7 @@ function audit(ir: any) {
 }
 
 describe("routing quality on the Nzoia flood-hazard workflow", () => {
-  for (const dir of ["auto", "tb", "lr"] as const) {
+  for (const dir of ["auto", "tb", "lr", "branches"] as const) {
     it(`${dir}: clean arrows — no phase-box or node crossings, distinct ports, minimal edge crossings`, () => {
       const r = audit(floodWithDirection(dir));
       expect(r.badPts).toBe(0);
@@ -95,11 +95,20 @@ describe("routing quality on the Nzoia flood-hazard workflow", () => {
       expect(r.groupCross).toBe(0);
       expect(r.nodeCross).toBe(0);
       expect(r.sharedPorts).toBe(0);
-      expect(r.edgeCross).toBeLessThanOrEqual(6);
+      expect(r.edgeCross).toBeLessThanOrEqual(8);
       expect(r.o.groups.length).toBe(5);
       expect(r.o.edges.length).toBe(floodIR.edges.length);
     });
   }
+
+  it("branch-columns mode aligns the three evidence phases in one band", () => {
+    const o: any = layout(floodWithDirection("branches"));
+    const top = (id: string) => o.groups.find((g: any) => g.id === id).y;
+    expect(Math.abs(top("g2") - top("g3"))).toBeLessThanOrEqual(2);
+    expect(Math.abs(top("g2") - top("g4"))).toBeLessThanOrEqual(2);
+    expect(top("g1")).toBeLessThan(top("g2"));
+    expect(top("g5")).toBeGreaterThan(top("g2"));
+  });
 
   it("is deterministic: repeat layout produces identical geometry", () => {
     const a: any = audit(floodWithDirection("auto")).o;

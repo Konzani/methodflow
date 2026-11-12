@@ -1,6 +1,6 @@
 import type { IR } from "@/lib/core/ir";
 import { layout } from "@/lib/core/layout";
-import { computeFit, DEFAULT_PAGE, pageSizeMM, type PageSettings, type PageSize } from "./page";
+import { computeFit, contentBoxes, DEFAULT_PAGE, pageSizeMM, type PageSettings, type PageSize } from "./page";
 
 export type PrintLevel = "good" | "ok" | "small";
 export type PrintInfo = { pt: number; level: PrintLevel; nodes: number };
@@ -24,13 +24,10 @@ const RESERVE_MM = 14;
 
 export const printLevel = (pt: number): PrintLevel => (pt >= 7 ? "good" : pt >= 5.5 ? "ok" : "small");
 
-function canvasOf(ir: IR): { width: number; height: number } {
-  const laid = layout(ir) as IR & { canvas?: { width: number; height: number } };
-  return laid.canvas ?? { width: 600, height: 600 };
-}
-
 export function printPt(ir: IR, page: PageSettings = DEFAULT_PAGE, reserveMM = RESERVE_MM): number {
-  const c = canvasOf(ir);
+  // Page-aware layout: the engine optimises folding for this page's content box.
+  const laid = layout(ir, contentBoxes(page, reserveMM)) as IR & { canvas?: { width: number; height: number } };
+  const c = laid.canvas ?? { width: 600, height: 600 };
   return NODE_FONT_PX * 0.75 * computeFit(c.width, c.height, page, reserveMM).scale;
 }
 
@@ -45,13 +42,12 @@ const SIZES: Exclude<PageSize, "custom">[] = ["a5", "letter", "a4", "legal", "a3
  * Choose the export page with the best chance of being thesis-ready.
  *
  * The user's page is kept when it already reaches 7 pt. Otherwise the smallest larger page
- * (A4 then A3 then legal, either orientation) that reaches 7 pt is chosen, so a dense figure
+ * (A4, then A3, then legal, either orientation) that reaches 7 pt is chosen, so a dense figure
  * is never silently exported as a 2 pt A5 page. If nothing reaches 7 pt, the largest available
  * size is returned with an explanatory reason; the caller blocks exports below 6 pt.
  */
 export function bestPrintPlan(ir: IR, base: PageSettings, reserveMM = RESERVE_MM): PrintPlan {
-  const c = canvasOf(ir);
-  const basePt = NODE_FONT_PX * 0.75 * computeFit(c.width, c.height, base, reserveMM).scale;
+  const basePt = printPt(ir, base, reserveMM);
   if (basePt >= THESIS_PT) {
     return { page: base, pt: basePt, basePt, level: printLevel(basePt), promoted: false, reason: "" };
   }
@@ -61,10 +57,8 @@ export function bestPrintPlan(ir: IR, base: PageSettings, reserveMM = RESERVE_MM
   for (const size of SIZES) {
     for (const orientation of ["portrait", "landscape"] as const) {
       const page: PageSettings = { ...base, size, orientation };
-      const fit = computeFit(c.width, c.height, page, reserveMM);
-      const pt = NODE_FONT_PX * 0.75 * fit.scale;
       const mm = pageSizeMM(page);
-      candidates.push({ page, pt, area: mm.w * mm.h });
+      candidates.push({ page, pt: printPt(ir, page, reserveMM), area: mm.w * mm.h });
     }
   }
   const good = candidates.filter((x) => x.pt >= THESIS_PT && x.area >= baseArea).sort((a, b) => a.area - b.area || b.pt - a.pt);

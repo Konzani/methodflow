@@ -2,7 +2,7 @@
 import type { IR } from "@/lib/core/ir";
 import { toSVG } from "./svg";
 import { captionOf, figureCaption } from "./caption";
-import { computeFit, pageSizeMM, resolvePage, type PageSettings } from "./page";
+import { computeFit, contentBoxes, pageSizeMM, resolvePage, type PageSettings } from "./page";
 
 export const slug = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "flowchart";
@@ -70,7 +70,7 @@ const dataUrl = (b: Blob) =>
   });
 
 export async function toPng(ir: IR, page: PageSettings, watermark = false) {
-  const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
+  const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark, contentBoxes(page));
   page = resolvePage(page, w, h);
   const fit = computeFit(w, h, page);
   const blob = await svgToPngBlob(svg, fit.pxW, fit.pxH);
@@ -80,7 +80,7 @@ export async function toPng(ir: IR, page: PageSettings, watermark = false) {
 const CAPTION_MM = 14;
 
 export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
-  const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
+  const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark, contentBoxes(page));
   page = resolvePage(page, w, h, CAPTION_MM);
   const fit = computeFit(w, h, page, CAPTION_MM);
   
@@ -131,7 +131,7 @@ export async function toPdf(ir: IR, page: PageSettings, watermark = false) {
 }
 
 export async function toDocx(ir: IR, page: PageSettings, watermark = false) {
-  const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark);
+  const { svg, w, h } = toSVG(ir, page.theme, page.font, undefined, watermark, contentBoxes(page));
   page = resolvePage(page, w, h, CAPTION_MM);
   const fit = computeFit(w, h, page);
   const png = await svgToPngBlob(svg, fit.pxW, fit.pxH);
