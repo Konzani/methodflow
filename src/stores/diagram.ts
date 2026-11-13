@@ -7,7 +7,7 @@ import{migrate}from"@/lib/core/migrate";
 export type Sel={k:"n"|"e"|"g";id:string}|null;
 interface S{
   ir:IR;past:IR[];future:IR[];sel:Sel;rev:number;tag:string;t:number;
-  load:(ir:IR)=>void;commit:(ir:IR,tag?:string)=>void;undo:()=>void;redo:()=>void;select:(s:Sel)=>void;
+  load:(ir:IR)=>void;newProject:(ir?:IR)=>void;commit:(ir:IR,tag?:string)=>void;undo:()=>void;redo:()=>void;select:(s:Sel)=>void;
   patchNode:(id:string,p:Partial<N>)=>void;patchEdge:(id:string,p:Partial<E>)=>void;patchTitle:(t:string)=>void;
   setPalette:(id:PaletteId)=>void;setDensity:(d:Density)=>void;setFlowDirection:(f:FlowDirection)=>void;
   setNodeColor:(id:string,p:{fill?:string;stroke?:string;text?:string})=>void;
@@ -26,6 +26,11 @@ export const useDiagram=create<S>((set,get)=>({
       ir: layout(safe), 
       past:[],future:[],sel:null,rev:s.rev+1,tag:""
     };
+  }),
+  // True fresh start: no previous IR, no undo history, no selection.
+  newProject:(ir=emptyIR())=>set(s=>{
+    const safe = migrate(ir) ?? ir;
+    return { ir: layout(safe), past:[], future:[], sel:null, rev:s.rev+1, tag:"", t:0 };
   }),
   commit:(ir,tag="")=>set(s=>{const now=Date.now();const merge=!!tag&&tag===s.tag&&now-s.t<900;return{ir,past:merge?s.past:[...s.past.slice(-49),s.ir],future:[],tag,t:now}}),
   undo:()=>set(s=>{const p=s.past[s.past.length-1];return p?{ir:p,past:s.past.slice(0,-1),future:[s.ir,...s.future].slice(0,50),tag:"",sel:null}:s}),

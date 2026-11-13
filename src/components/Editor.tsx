@@ -27,6 +27,7 @@ import {
   REQUEST_METHODS,
   SHAPES,
   DENSITIES,
+  type IR,
   type Method,
   type RequestMethod,
   type Shape,
@@ -39,7 +40,7 @@ import { layout } from "@/lib/core/layout";
 import { bestPrintPlan, printInfo } from "@/lib/export/print";
 import { withStyle } from "@/lib/core/style";
 import { TEMPLATES, getTemplate } from "@/lib/templates";
-import { loadDraft, parseIR, saveDraft } from "@/lib/persist";
+import { clearDraft, loadDraft, parseIR, saveDraft } from "@/lib/persist";
 import { toSVG, type Theme } from "@/lib/export/svg";
 import { contentBoxes, DEFAULT_PAGE, loadPageSettings, resolvePage, savePageSettings, type PageSettings } from "@/lib/export/page";
 import { PALETTE_LIST, SWATCHES, getPalette } from "@/lib/core/palettes";
@@ -237,6 +238,10 @@ function Inner() {
   const [page, setPage] = useState<PageSettings>(DEFAULT_PAGE);
   const pinfo = useMemo(() => printInfo(ir, page), [ir, page]);
   const [cloudId, setCloudId] = useState<string | null>(null);
+  const [genError, setGenError] = useState<{ title: string; detail: string; retryable: boolean; templateIR?: IR } | null>(null);
+  // Monotonic id for AI requests: a slow response from an earlier generation/refine/upload
+  // must never overwrite the result of a newer one.
+  const aiSeq = useRef(0);
   const [user, setUser] = useState<User | null>(null);
   const [plan, setPlan] = useState<"free" | "pro">("free");
   const planRef = useRef<"free" | "pro">("free");
@@ -414,6 +419,11 @@ function Inner() {
     const id = params.get("id");
     const t = params.get("t");
     const init = async () => {
+      if (params.get("new") === "1") {
+        startNewProject(false);
+        booted.current = true;
+        return;
+      }
       if (id) {
         const supabase = createClient();
         const { data, error } = await supabase.from("diagrams").select("ir").eq("id", id).single();
@@ -538,6 +548,27 @@ function Inner() {
     router.refresh();
   }
 
+  /**
+   * Start genuinely fresh: clear the saved browser draft, reset the IR and undo history,
+   * forget the cloud diagram id and clear AI inputs. Without this, /app always reloaded the
+   * previous draft, so "New project" appeared to keep the old diagram.
+   */
+  function startNewProject(openCreate: boolean, ask = false) {
+    if (ask && useDiagram.getState().ir.nodes.length > 1 && !confirm("Start a new diagram? The current one stays in this browser until it is replaced.")) return;
+    aiSeq.current++; // invalidate any in-flight AI response for the old diagram
+    clearDraft();
+    useDiagram.getState().newProject();
+    setCloudId(null);
+    setGenError(null);
+    setMsg("");
+    setText("");
+    setExtra("");
+    setRefineText("");
+    setUploadedFile(null);
+    setPanel(openCreate ? "l" : null);
+    window.history.replaceState(null, "", "/app");
+  }
+
   async function saveCloud() {
     if (!user) {
       setMsg("Please sign in to save to the cloud.");
@@ -579,30 +610,57 @@ function Inner() {
   }
 
   async function gen() {
+    const seq = ++aiSeq.current;
     setBusy(true);
     setMsg("");
+    setGenError(null);
     startProgress(GEN_STAGES);
     let ok = false;
     try {
-      const r = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ methodology: method, text, extra }),
-      });
-      const j = await r.json();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 130_000);
+      let r: Response;
+      try {
+        r = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ methodology: method, text, extra }),
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (seq !== aiSeq.current) return; // a newer AI action owns the canvas now
+      const j = await r.json().catch(() => null);
+      if (seq !== aiSeq.current) return;
       if (r.status === 429) {
         setMsg("");
         openUpgrade("limit");
-      } else if (!r.ok) {
-        setMsg(j.message || "Generation failed.");
+      } else if (!r.ok || !j) {
+        setGenError({
+          title: "Generation failed",
+          detail: `${j?.message || `The server returned ${r.status}.`} Your previous diagram is still on the canvas — it was not replaced.`,
+          retryable: true,
+        });
+        setMsg("Generation failed — your previous diagram is unchanged.");
       } else {
         const p = IRSchema.safeParse(j.ir);
         if (j.source === "template") {
-          setMsg(
-            `Could not generate a flowchart from your text, so your diagram is unchanged. ${(j.warnings as string[] | undefined)?.join(" ") ?? ""} ${j.reason ? "Reason: " + j.reason + ". " : ""}Try again, or shorten the text.`.replace(/\s+/g, " ").trim()
-          );
+          const why = [...(((j.warnings as string[] | undefined) ?? [])), j.reason ? `Reason: ${j.reason}` : ""].filter(Boolean).join(" ");
+          setGenError({
+            title: "No new diagram was generated",
+            detail: `The generator returned a fallback template, so your previous diagram is still on the canvas. ${why}`.replace(/\s+/g, " ").trim(),
+            retryable: true,
+            templateIR: p.success ? p.data : undefined,
+          });
+          setMsg("Generation failed — your previous diagram is unchanged.");
         } else if (!p.success) {
-          setMsg("The result was not valid. Your diagram is unchanged.");
+          setGenError({
+            title: "The generated diagram was invalid",
+            detail: "It was discarded, so your previous diagram is still on the canvas. Try again.",
+            retryable: true,
+          });
+          setMsg("Generation failed — your previous diagram is unchanged.");
         } else {
           const g = useDiagram.getState();
           g.commit(layout(withStyle(p.data, g.ir.meta)));
@@ -610,13 +668,22 @@ function Inner() {
           const detected = method === "auto" || p.data.meta.methodology !== method ? `Detected design: ${ML[p.data.meta.methodology as Method] ?? p.data.meta.methodology}. ` : "";
           setMsg(detected + ((j.warnings as string[] | undefined)?.join(" ") || "Draft ready. Check every step against your own method."));
           setPanel(null);
+          setGenError(null);
           ok = true;
         }
       }
-    } catch {
-      setMsg("Network error. Your diagram is unchanged.");
+    } catch (e) {
+      if (seq !== aiSeq.current) return;
+      const aborted = e instanceof DOMException && e.name === "AbortError";
+      setGenError({
+        title: aborted ? "Generation timed out" : "Network error",
+        detail: "Your previous diagram is still on the canvas. Check the connection and try again.",
+        retryable: true,
+      });
+      setMsg(aborted ? "Generation timed out — your previous diagram is unchanged." : "Network error — your previous diagram is unchanged.");
+    } finally {
+      if (seq === aiSeq.current) finishProgress(ok);
     }
-    finishProgress(ok);
   }
 
   async function upload(file?: File) {
@@ -625,15 +692,18 @@ function Inner() {
       openUpgrade("feature");
       return;
     }
+    const seq = ++aiSeq.current;
     setUploadedFile(file.name);
     setBusy(true);
     setMsg("");
+    setGenError(null);
     startProgress(UPLOAD_STAGES);
     let ok = false;
     try {
       const formData = new FormData();
       formData.append("file", file);
       const r = await fetch("/api/upload", { method: "POST", body: formData });
+      if (seq !== aiSeq.current) return;
       const rawText = await r.text();
       let j: any;
       try {
@@ -642,13 +712,21 @@ function Inner() {
         if (!r.ok) throw new Error(`Server Error: ${r.status} ${r.statusText}`);
         throw new Error("Invalid response from server");
       }
+      if (seq !== aiSeq.current) return;
       if (!r.ok) {
+        setGenError({ title: "Upload failed", detail: j.message || `The server returned ${r.status}. Your previous diagram is unchanged.`, retryable: false });
         setMsg(j.message || "Upload failed.");
       } else {
         const p = IRSchema.safeParse(j.ir);
         if (j.source === "template") {
-          setMsg(`Could not build a flowchart from that document, so your diagram is unchanged. ${j.reason ? "Reason: " + j.reason + "." : ""}`.trim());
+          setGenError({
+            title: "No diagram was generated from that document",
+            detail: `The uploaded document did not yield a valid diagram, so your previous diagram is unchanged. ${j.reason ? "Reason: " + j.reason + "." : ""}`.trim(),
+            retryable: false,
+          });
+          setMsg("Upload failed — your previous diagram is unchanged.");
         } else if (!p.success) {
+          setGenError({ title: "The generated diagram was invalid", detail: "It was discarded, so your previous diagram is unchanged.", retryable: false });
           setMsg("The result was not valid.");
         } else {
           const g = useDiagram.getState();
@@ -660,10 +738,13 @@ function Inner() {
         }
       }
     } catch (err: any) {
+      if (seq !== aiSeq.current) return;
+      setGenError({ title: "Upload failed", detail: (err.message || "Network error during upload.") + " Your previous diagram is unchanged.", retryable: false });
       setMsg(err.message || "Network error during upload.");
+    } finally {
+      setUploadedFile(null);
+      if (seq === aiSeq.current) finishProgress(ok);
     }
-    setUploadedFile(null);
-    finishProgress(ok);
   }
 
   const SIMPLIFY =
@@ -675,8 +756,10 @@ function Inner() {
 
   async function runRefine(instruction: string, clearAfter: boolean) {
     if (!instruction.trim()) return;
+    const seq = ++aiSeq.current;
     setBusy(true);
     setMsg("");
+    setGenError(null);
     startProgress(REFINE_STAGES);
     let ok = false;
     try {
@@ -685,17 +768,22 @@ function Inner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ir: useDiagram.getState().ir, instruction }),
       });
-      const j = await r.json();
+      if (seq !== aiSeq.current) return;
+      const j = await r.json().catch(() => null);
+      if (seq !== aiSeq.current) return;
       if (r.status === 429) {
         setMsg("");
         openUpgrade("limit");
-      } else if (!r.ok) {
-        setMsg(j.message || "Refine failed.");
+      } else if (!r.ok || !j) {
+        setGenError({ title: "Refine failed", detail: `${j?.message || `The server returned ${r.status}.`} Your diagram is unchanged.`, retryable: false });
+        setMsg(j?.message || "Refine failed.");
       } else {
         const p = IRSchema.safeParse(j.ir);
         if (j.source === "template") {
+          setGenError({ title: "The refinement could not be applied", detail: "The AI could not apply that edit, so your diagram is unchanged. Try rephrasing the instruction.", retryable: false });
           setMsg("The edit could not be applied, so your diagram is unchanged. Try rephrasing the instruction.");
         } else if (!p.success) {
+          setGenError({ title: "The refined diagram was invalid", detail: "It was discarded, so your diagram is unchanged.", retryable: false });
           setMsg("The result was not valid. Your diagram is unchanged.");
         } else {
           const g = useDiagram.getState();
@@ -709,10 +797,14 @@ function Inner() {
           ok = true;
         }
       }
-    } catch {
-      setMsg("Network error. Your diagram is unchanged.");
+    } catch (e) {
+      if (seq !== aiSeq.current) return;
+      const aborted = e instanceof DOMException && e.name === "AbortError";
+      setGenError({ title: aborted ? "Refine timed out" : "Network error", detail: "Your diagram is unchanged. Check the connection and try again.", retryable: false });
+      setMsg(aborted ? "Refine timed out. Your diagram is unchanged." : "Network error. Your diagram is unchanged.");
+    } finally {
+      if (seq === aiSeq.current) finishProgress(ok);
     }
-    finishProgress(ok);
   }
 
   async function exp(k: string) {
@@ -831,6 +923,9 @@ function Inner() {
         <button onClick={saveCloud} disabled={busy} style={{ color: "var(--accent)", borderColor: "var(--accent)" }}>
           Save to Cloud
         </button>
+        <button onClick={() => startNewProject(true, true)} disabled={busy} title="Start a fresh diagram (old draft is cleared)">
+          New
+        </button>
         <button onClick={s.undo} disabled={!past.length} aria-label="Undo">
           Undo
         </button>
@@ -891,6 +986,61 @@ function Inner() {
           )}
         </div>
       </header>
+
+      {genError && (
+        <div
+          role="alert"
+          style={{
+            position: "fixed",
+            top: 64,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 120,
+            width: "calc(100% - 32px)",
+            maxWidth: 780,
+            background: "#fff7f7",
+            border: "1px solid #f3b4b4",
+            borderRadius: 12,
+            boxShadow: "0 8px 24px rgba(0,0,0,.14)",
+            padding: "12px 16px",
+            color: "#7f1d1d",
+          }}
+        >
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 300px" }}>
+              <strong style={{ fontSize: 15 }}>{genError.title}</strong>
+              <div style={{ fontSize: 13, lineHeight: 1.45, marginTop: 2 }}>{genError.detail}</div>
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              {genError.retryable && (
+                <button className="btn" disabled={busy} onClick={() => gen()}>
+                  Retry generation
+                </button>
+              )}
+              {genError.templateIR && (
+                <button
+                  className="btn ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    const tpl = genError?.templateIR;
+                    if (!tpl) return;
+                    const g = useDiagram.getState();
+                    g.commit(layout(withStyle(tpl, g.ir.meta)));
+                    useDiagram.setState((x) => ({ rev: x.rev + 1 }));
+                    setGenError(null);
+                    setMsg("Loaded the fallback template — check every step against your methods.");
+                  }}
+                >
+                  Use fallback template
+                </button>
+              )}
+              <button onClick={() => setGenError(null)} aria-label="Dismiss error">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <aside className="side left" data-open={panel === "l"}>
         {showOnboarding && (

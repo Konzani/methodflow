@@ -57,7 +57,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 Upgrade to Pro
               </Link>
             )}
-            <Link href="/app" className="btn">+ New Flowchart</Link>
+            <Link href="/app?new=1" className="btn">+ New Flowchart</Link>
           </div>
         </div>
 
