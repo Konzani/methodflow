@@ -141,8 +141,8 @@ function MFEdge(p: EdgeProps) {
   if (pts && pts.length >= 2) {
     path = pts.map((q, i) => (i === 0 ? "M" : "L") + q.x + "," + q.y).join(" ");
     if (d.labelPos) {
-      lx = d.labelPos.x + (d.labelPos.anchor === "start" ? 12 : d.labelPos.anchor === "end" ? -12 : 0);
-      ly = d.labelPos.y - 4;
+      lx = d.labelPos.x;
+      ly = d.labelPos.y;
     }
   } else {
     const r = getSmoothStepPath({
@@ -480,7 +480,7 @@ function Inner() {
         data: { points: (e as any).points, labelPos: (e as any).labelPos },
         selected: sel?.k === "e" && sel.id === e.id,
         style: { stroke: pal.ink, strokeWidth: 1.4, strokeDasharray: e.dashed ? "6 4" : undefined },
-        markerEnd: { type: MarkerType.ArrowClosed, color: pal.ink },
+        markerEnd: { type: MarkerType.ArrowClosed, color: pal.ink, width: 20, height: 20, markerUnits: "userSpaceOnUse" },
         labelStyle: { fontSize: 11, fill: pal.ink },
         labelBgStyle: { fill: "#fff" },
       }))

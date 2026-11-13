@@ -36,6 +36,13 @@ export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", palet
   const W = laidOut.canvas.width;
   const H = laidOut.canvas.height;
 
+  // Arrowheads and edge strokes are sized in page space, not diagram units, so they keep a
+  // printable minimum when a large diagram is scaled down to fit a page. Target: 3.5 pt
+  // arrowhead, ~0.75 pt line.
+  const fitScale = boxes && boxes.length ? Math.max(...boxes.map((b) => Math.min(1, b.w / W, b.h / H))) : 1;
+  const arrowPx = boxes && boxes.length ? Math.min(60, Math.max(4, 3.5 / (0.75 * Math.max(fitScale, 0.05)))) : 9;
+  const edgeStroke = boxes && boxes.length ? Math.min(4, Math.max(1.2, 1 / Math.max(fitScale, 0.05))) : 1.3;
+
   const pal = paletteOverride ?? getPalette(laidOut.meta?.paletteId ?? theme);
   const ink = pal.ink;
   const ff = font === "serif" ? "'Times New Roman',Times,serif" : "Arial,Helvetica,sans-serif";
@@ -75,9 +82,13 @@ export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", palet
         labelY = midY;
       }
       const lab = e.label
-        ? `<rect x="${labelX - 4}" y="${labelY - 14}" width="${Math.max(e.label.length * 6 + 8, 20)}" height="14" rx="2" fill="#fff"/><text x="${labelX}" y="${labelY - 3}" font-size="11" fill="${ink}" text-anchor="middle">${esc(e.label)}</text>`
+        ? (() => {
+            const lw = Math.max(22, e.label.length * 6.2 + 10);
+            const lh = 15;
+            return `<rect x="${labelX - lw / 2}" y="${labelY - lh / 2}" width="${lw}" height="${lh}" rx="2" fill="#fff"/><text x="${labelX}" y="${labelY + 3.8}" font-size="11" fill="${ink}" text-anchor="middle">${esc(e.label)}</text>`;
+          })()
         : "";
-      return `<path d="${pathD}" fill="none" stroke="${ink}" stroke-width="1.3"${e.dashed ? ' stroke-dasharray="6 4"' : ""} marker-end="url(#a)"/>${lab}`;
+      return `<path d="${pathD}" fill="none" stroke="${ink}" stroke-width="${edgeStroke}"${e.dashed ? ' stroke-dasharray="6 4"' : ""} marker-end="url(#a)"/>${lab}`;
     })
     .join("");
 
@@ -112,7 +123,7 @@ export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", palet
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${ff}" role="img" aria-label="${esc(laidOut.meta.title)}"><title>${esc(laidOut.meta.title)}</title><desc>${esc(laidOut.meta.caption ?? "")}</desc>
     <defs>
-      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${ink}"/></marker>
+      <marker id="a" markerUnits="userSpaceOnUse" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="${arrowPx}" markerHeight="${arrowPx}" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${ink}"/></marker>
     </defs>
     <rect width="100%" height="100%" fill="${pal.canvas}"/>
     ${groups}${edges}${nodes}

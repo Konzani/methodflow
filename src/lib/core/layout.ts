@@ -415,6 +415,67 @@ const insideRect = (r: Box, b: Box) => {
   return cx > r.x && cx < r.x + r.w && cy > r.y && cy < r.y + r.h;
 };
 
+const labelWidth = (label: string) => Math.max(22, label.length * 6.2 + 10);
+
+/**
+ * Choose a label position for an edge that is readable and does not collide with nodes,
+ * phase title bands or previously placed labels. Preference: long segment, near its middle,
+ * a small perpendicular offset ("offset from the node") so it never sits on the arrow stub.
+ */
+function pickLabel(
+  points: P[],
+  label: string,
+  ctx: { nodes: Map<string, Box>; groups: Map<string, Box>; taken: Box[]; width: number; height: number }
+): LabelPos {
+  const w = labelWidth(label);
+  const h = 15;
+  const rectAt = (x: number, y: number): Box => ({ x: x - w / 2, y: y - h / 2, w, h });
+  const overlaps = (a: Box, b: Box, pad = 0) =>
+    a.x < b.x + b.w + pad && b.x < a.x + a.w + pad && a.y < b.y + b.h + pad && b.y < a.y + a.h + pad;
+  const hitsNode = (r: Box) => {
+    for (const b of ctx.nodes.values()) if (overlaps(r, b, 3)) return true;
+    return false;
+  };
+  const hitsTitle = (r: Box) => {
+    for (const g of ctx.groups.values()) {
+      if (overlaps(r, { x: g.x + 4, y: g.y + 2, w: g.w - 8, h: HEADER - 2 }, 2)) return true;
+    }
+    return false;
+  };
+  const hitsLabel = (r: Box) => ctx.taken.some((b) => overlaps(r, b, 4));
+
+  const segments: { a: P; b: P; len: number }[] = [];
+  for (let i = 1; i < points.length; i++) {
+    segments.push({
+      a: points[i - 1],
+      b: points[i],
+      len: Math.abs(points[i].x - points[i - 1].x) + Math.abs(points[i].y - points[i - 1].y),
+    });
+  }
+  segments.sort((x, y) => y.len - x.len);
+
+  let best: { x: number; y: number; score: number } | null = null;
+  for (const seg of segments.slice(0, 4)) {
+    const horizontal = seg.a.y === seg.b.y;
+    for (const t of [0.35, 0.5, 0.65]) {
+      const bx = seg.a.x + (seg.b.x - seg.a.x) * t;
+      const by = seg.a.y + (seg.b.y - seg.a.y) * t;
+      for (const off of [0, 14, -14, 24, -24]) {
+        const x = Math.min(ctx.width - w / 2 - 2, Math.max(w / 2 + 2, horizontal ? bx : bx + off));
+        const y = Math.min(ctx.height - h / 2 - 2, Math.max(h / 2 + 2, horizontal ? by + off : by));
+        const r = rectAt(x, y);
+        if (hitsNode(r)) continue;
+        let score = 100 + Math.min(seg.len, 140) * 0.4 - Math.abs(t - 0.5) * 30 - Math.abs(off) * 0.5;
+        if (hitsTitle(r)) score -= 400;
+        if (hitsLabel(r)) score -= 250;
+        if (!best || score > best.score) best = { x, y, score };
+      }
+    }
+  }
+  if (best) return { x: best.x, y: best.y, anchor: "middle" };
+  return labelAtPts(points);
+}
+
 function pathHitsNodes(pts: P[], nodes: Map<string, Box>, except: Set<string>): boolean {
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1];
@@ -1151,6 +1212,7 @@ function spreadPorts(geo: Geo): Geo {
 export function layout<T extends IRLike>(ir: T, boxes?: FitBox[]): T {
   if (!ir.nodes.length) return ir;
   const g = spreadPorts(applyPins(ir, place(ir, boxes)));
+  const taken: Box[] = [];
   return {
     ...ir,
     nodes: ir.nodes.map((n) => {
@@ -1165,7 +1227,17 @@ export function layout<T extends IRLike>(ir: T, boxes?: FitBox[]): T {
     }),
     edges: ir.edges.map((e) => {
       const r = g.edges.get(e.id);
-      return r ? { ...e, points: r.points, labelPos: e.label ? labelAtPts(r.points) : undefined } : e;
+      if (!r) return e;
+      if (!e.label) return { ...e, points: r.points, labelPos: undefined };
+      const labelPos = pickLabel(r.points, e.label, {
+        nodes: g.nodes,
+        groups: g.groups,
+        taken,
+        width: g.width,
+        height: g.height,
+      });
+      taken.push({ x: labelPos.x - labelWidth(e.label) / 2, y: labelPos.y - 7.5, w: labelWidth(e.label), h: 15 });
+      return { ...e, points: r.points, labelPos };
     }),
     canvas: { width: g.width, height: g.height },
   } as T;
