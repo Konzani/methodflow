@@ -48,6 +48,7 @@ import { toMermaid } from "@/lib/export/mermaid";
 import { toTikz } from "@/lib/export/tikz";
 import { copy, download, slug, toDocx, toPdf, toPng } from "@/lib/export/client";
 import { useDiagram } from "@/stores/diagram";
+import { classifyFailure, friendlyGenerationError, generationErrorHint, type GenErrorCode } from "@/lib/gen-errors";
 import { useUpgradeStore } from "@/stores/upgrade";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { createClient } from "@/lib/supabase/client";
@@ -637,28 +638,26 @@ function Inner() {
         setMsg("");
         openUpgrade("limit");
       } else if (!r.ok || !j) {
+        const code = (j?.code as GenErrorCode | undefined) ?? "unavailable";
+        console.error("[generate] technical failure:", r.status, j?.reason ?? j?.message);
         setGenError({
-          title: "Generation failed",
-          detail: `${j?.message || `The server returned ${r.status}.`} Your previous diagram is still on the canvas — it was not replaced.`,
+          title: "Couldn't generate a new diagram",
+          detail: `${friendlyGenerationError(code)} ${generationErrorHint}`,
           retryable: true,
         });
         setMsg("Generation failed — your previous diagram is unchanged.");
       } else {
         const p = IRSchema.safeParse(j.ir);
-        if (j.source === "template") {
-          const why = [...(((j.warnings as string[] | undefined) ?? [])), j.reason ? `Reason: ${j.reason}` : ""].filter(Boolean).join(" ");
+        const code = (j.code as GenErrorCode | undefined) ?? classifyFailure([String(j.reason ?? "")]);
+        if (j.source === "template" || !p.success) {
+          // Never show provider names, model ids, Zod paths or stack details to users.
+          // The technical reason stays in the browser console for debugging/support.
+          console.error("[generate] technical reason:", j.reason ?? "invalid IR received from server");
           setGenError({
-            title: "No new diagram was generated",
-            detail: `The generator returned a fallback template, so your previous diagram is still on the canvas. ${why}`.replace(/\s+/g, " ").trim(),
+            title: "Couldn't generate a new diagram",
+            detail: `${friendlyGenerationError(code)} ${generationErrorHint}${p.success ? " You can retry, or load a generic template to start from." : ""}`,
             retryable: true,
             templateIR: p.success ? p.data : undefined,
-          });
-          setMsg("Generation failed — your previous diagram is unchanged.");
-        } else if (!p.success) {
-          setGenError({
-            title: "The generated diagram was invalid",
-            detail: "It was discarded, so your previous diagram is still on the canvas. Try again.",
-            retryable: true,
           });
           setMsg("Generation failed — your previous diagram is unchanged.");
         } else {
@@ -675,9 +674,10 @@ function Inner() {
     } catch (e) {
       if (seq !== aiSeq.current) return;
       const aborted = e instanceof DOMException && e.name === "AbortError";
+      console.error("[generate] technical failure:", e);
       setGenError({
-        title: aborted ? "Generation timed out" : "Network error",
-        detail: "Your previous diagram is still on the canvas. Check the connection and try again.",
+        title: "Couldn't generate a new diagram",
+        detail: `${friendlyGenerationError(aborted ? "timeout" : "unavailable")} ${generationErrorHint}`,
         retryable: true,
       });
       setMsg(aborted ? "Generation timed out — your previous diagram is unchanged." : "Network error — your previous diagram is unchanged.");
@@ -719,9 +719,10 @@ function Inner() {
       } else {
         const p = IRSchema.safeParse(j.ir);
         if (j.source === "template") {
+          console.error("[upload] technical reason:", j.reason ?? "template fallback");
           setGenError({
             title: "No diagram was generated from that document",
-            detail: `The uploaded document did not yield a valid diagram, so your previous diagram is unchanged. ${j.reason ? "Reason: " + j.reason + "." : ""}`.trim(),
+            detail: "The uploaded document did not yield a usable diagram, so your previous diagram is unchanged. Try a text-based PDF or DOCX, or a shorter document.",
             retryable: false,
           });
           setMsg("Upload failed — your previous diagram is unchanged.");
@@ -739,8 +740,9 @@ function Inner() {
       }
     } catch (err: any) {
       if (seq !== aiSeq.current) return;
-      setGenError({ title: "Upload failed", detail: (err.message || "Network error during upload.") + " Your previous diagram is unchanged.", retryable: false });
-      setMsg(err.message || "Network error during upload.");
+      console.error("[upload] technical failure:", err);
+      setGenError({ title: "Upload failed", detail: "The file could not be processed. Your previous diagram is unchanged — check the file and try again.", retryable: false });
+      setMsg("Network error during upload.");
     } finally {
       setUploadedFile(null);
       if (seq === aiSeq.current) finishProgress(ok);
@@ -1346,7 +1348,7 @@ function Inner() {
             <h2>Step</h2>
             <label className="f">
               Label
-              <input value={selNode.label} maxLength={80} onChange={(e) => s.patchNode(selNode.id, { label: e.target.value || " " })} />
+              <input value={selNode.label} maxLength={120} onChange={(e) => s.patchNode(selNode.id, { label: e.target.value || " " })} />
             </label>
             <label className="f">
               Shape

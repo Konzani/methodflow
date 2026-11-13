@@ -162,7 +162,7 @@ ACADEMIC CONVENTIONS
   tense as the source. State no results. Do not write "Figure", a number or a table reference:
   the document adds the figure number.
 - Labels: sentence case, no trailing punctuation, about ${range(LIMITS.labelWords)} words (never more than
-  ${LIMITS.labelWordsMax}). Action steps start with a concrete verb (Define, Recruit, Randomise, Sample,
+  ${LIMITS.labelWordsMax} words, and never more than ${LIMITS.labelCharsMax} characters). Action steps start with a concrete verb (Define, Recruit, Randomise, Sample,
   Acquire, Preprocess, Classify, Estimate, Calibrate, Validate, Integrate, Interpret). Decisions are
   questions ending in "?". Use abbreviations only when the source does.
 - Reporting guidelines shape the stages and their order only: PRISMA 2020 for reviews
@@ -353,7 +353,7 @@ Extract and diagram the methodology, not the whole document. For a long document
 export const repairMsg = (issues: string[]) =>
   `The generated JSON failed structural validation. Correct these issues:
 ${issues.slice(0, 12).map((i) => "- " + i).join("\n")}
-Return the complete corrected JSON object only. Keep scientifically correct content and fix every listed error. Do not add unsupported study details.`;
+Keep every node label within ${LIMITS.labelCharsMax} characters (prefer 10 words or fewer) and keep the JSON valid. Return the complete corrected JSON object only. Keep scientifically correct content and fix every listed error. Do not add unsupported study details.`;
 
 export const polishMsg = (issues: string[]) =>
   `The JSON is structurally valid, but a quality review found these issues:

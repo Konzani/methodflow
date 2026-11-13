@@ -14,6 +14,8 @@ import {
 } from "./core/prompt";
 import { qualityIssues, numberFidelity } from "./core/quality";
 import { focusMethodology } from "./core/extract";
+import { coerceGeneratedIR } from "./core/coerce";
+import { classifyFailure, type GenErrorCode } from "./gen-errors";
 import { fallbackFor } from "./templates";
 import { attempts, legacyModelEnv, requestBody, type Attempt } from "./models";
 
@@ -21,9 +23,20 @@ type Msg = { role: "system" | "user" | "assistant"; content: string };
 
 type CallResult = { text: string; finish: string; tin: number; tout: number };
 
-export type Gen = { ir: IR; source: "ai" | "template"; warnings: string[]; cost: number; provider?: string; reason?: string };
+export type Gen = {
+  ir: IR;
+  source: "ai" | "template";
+  warnings: string[];
+  cost: number;
+  provider?: string;
+  reason?: string;
+  code?: GenErrorCode;
+  calls?: number;
+};
 
 const MIN_CALL_MS = 6_000;
+const MIN_ATTEMPT_MS = 12_000;
+const MIN_RETRY_MS = 18_000;
 
 for (const name of legacyModelEnv()) {
   console.error(`[llm] ${name} holds a retired DeepSeek model name; it is remapped to the current default. Update the environment variable.`);
@@ -114,7 +127,7 @@ function jsonOf(t: string): unknown {
 }
 
 function parse(t: string): { ir?: IR; issues: string[] } {
-  const j = jsonOf(t);
+  const j = coerceGeneratedIR(jsonOf(t));
   if (j === null) return { issues: ["Output was not valid JSON."] };
   const r = IRSchema.safeParse(j);
   if (!r.success) return { issues: r.error.issues.slice(0, 6).map((i) => i.path.join(".") + ": " + i.message) };
@@ -131,13 +144,15 @@ type SolveOpts = {
   guard?: (ir: IR) => string[];
 };
 
-async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: string; tried: boolean; why: string[] }> {
+async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: string; tried: boolean; why: string[]; calls: number }> {
   const why: string[] = [];
   let cost = 0;
   let tried = false;
+  let calls = 0;
 
   for (const a of attempts(o.deep)) {
     if (tripped(a.id)) continue;
+    if (o.deadline - Date.now() < MIN_ATTEMPT_MS) break;
 
     const msgs: Msg[] = [
       { role: "system", content: o.system },
@@ -150,10 +165,17 @@ async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: 
     try {
       for (;;) {
         const remaining = o.deadline - Date.now();
-        if (remaining < MIN_CALL_MS) break;
-        const timeout = Math.min(a.timeoutMs, a.thinking ? remaining * 0.6 : remaining - 1_000);
+        const isRetry = msgs.length > 2;
+        if (remaining < (isRetry ? MIN_RETRY_MS : MIN_CALL_MS)) break;
+        // Deep reasoning gets most of the budget but leaves a real window for the fast
+        // fallback; every retry/polish is skipped when it cannot finish usefully.
+        const timeout = Math.min(
+          a.timeoutMs,
+          a.thinking ? Math.max(15_000, remaining - 25_000) : Math.max(MIN_CALL_MS, remaining - 1_000)
+        );
 
         tried = true;
+        calls++;
         const r = await call(a, msgs, timeout);
         cost += costOf(a, r);
 
@@ -185,9 +207,9 @@ async function solve(o: SolveOpts): Promise<{ ir?: IR; cost: number; provider?: 
       else console.error(`[llm] ${a.id} polish pass failed, keeping the valid draft`);
     }
 
-    if (good) return { ir: layout(fixTopology(good.ir)), cost, provider: a.provider, tried, why };
+    if (good) return { ir: layout(fixTopology(good.ir)), cost, provider: a.provider, tried, why, calls };
   }
-  return { cost, tried, why };
+  return { cost, tried, why, calls };
 }
 
 const list = (xs: string[]) => xs.slice(0, 6).join(", ");
@@ -234,8 +256,33 @@ export async function generate(a: {
       if (f.invented.length) w.push(`Numbers in the diagram that are not in your text: ${list(f.invented)}. Remove them unless you added them yourself.`);
       if (f.missing.length) w.push(`Numbers from your text that are not in the diagram: ${list(f.missing)}. Add them to the relevant step.`);
     }
-    return { ir: r.ir, source: "ai", warnings: w, cost: r.cost, provider: r.provider };
+    console.error(
+      "[llm-cost]",
+      JSON.stringify({
+        tier: isPro ? "pro" : "free",
+        ok: true,
+        source: "ai",
+        provider: r.provider ?? null,
+        calls: r.calls,
+        nodes: r.ir.nodes.length,
+        cost_usd: Number(r.cost.toFixed(5)),
+      })
+    );
+    return { ir: r.ir, source: "ai", warnings: w, cost: r.cost, provider: r.provider, calls: r.calls };
   }
+  const code = classifyFailure(r.why);
+  console.error(
+    "[llm-cost]",
+    JSON.stringify({
+      tier: isPro ? "pro" : "free",
+      ok: false,
+      source: "template",
+      code,
+      calls: r.calls,
+      cost_usd: Number(r.cost.toFixed(5)),
+      why: r.why.slice(0, 3),
+    })
+  );
   return {
     ir: fallbackFor(a.method === "auto" ? "custom" : a.method),
     source: "template",
@@ -247,6 +294,8 @@ export async function generate(a: {
     ],
     cost: r.cost,
     reason: r.why.join(" | ") || undefined,
+    code,
+    calls: r.calls,
   };
 }
 

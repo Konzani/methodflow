@@ -57,7 +57,10 @@ export function attempts(deep: boolean, env: Env = process.env): Attempt[] {
       model: deepModel,
       thinking: true,
       effort,
-      maxTokens: num(env.DEEPSEEK_DEEP_MAX_TOKENS || env.DEEPSEEK_REASONER_MAX_TOKENS, 16000),
+      // A labelled thesis diagram needs far fewer than the historical 16k ceiling; capping
+      // output tokens bounds the worst-case spend on reasoning models without truncating
+      // normal diagrams.
+      maxTokens: Math.min(num(env.DEEPSEEK_DEEP_MAX_TOKENS || env.DEEPSEEK_REASONER_MAX_TOKENS, 10000), 12000),
       timeoutMs: 90_000,
     });
   }
@@ -68,7 +71,7 @@ export function attempts(deep: boolean, env: Env = process.env): Attempt[] {
     key,
     model: fast,
     thinking: false,
-    maxTokens: 8000,
+    maxTokens: 6000,
     timeoutMs: 40_000,
   });
   list.push({
@@ -78,7 +81,7 @@ export function attempts(deep: boolean, env: Env = process.env): Attempt[] {
     key: env.OPENAI_API_KEY || "",
     model: oai,
     thinking: false,
-    maxTokens: 8000,
+    maxTokens: 6000,
     timeoutMs: 40_000,
   });
   return list.filter((a) => a.key && a.model);

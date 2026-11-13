@@ -12,7 +12,7 @@ const coord = z.number().finite().optional();
 
 export const NodeS = z.object({
   id,
-  label: z.string().min(1).max(80),
+  label: z.string().min(1).max(120),
   shape: z.enum(SHAPES),
   groupId: id.optional(),
   notes: z.string().max(300).optional(),

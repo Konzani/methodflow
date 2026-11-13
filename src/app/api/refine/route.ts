@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     const g = await refine({ ir: p.data.ir, instruction: t.text, isPro });
     
     await spend(g.cost);
-    return ok({ ir: g.ir, source: g.source, reason: g.reason, warnings: [...t.warnings, ...g.warnings] });
+    return ok({ ir: g.ir, source: g.source, reason: g.reason, warnings: [...t.warnings, ...g.warnings], code: g.code });
   } catch (e) {
     if (e instanceof SyntaxError) return fail("BAD_REQUEST", 400);
     return fail("SERVER", 500);

@@ -7,4 +7,5 @@ export const LIMITS = {
   groupsTypical: [3, 5],
   labelWords: [2, 8],
   labelWordsMax: 10,
+  labelCharsMax: 120,
 } as const;

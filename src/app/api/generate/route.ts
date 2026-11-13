@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
 
     await spend(g.cost);
     if (g.source === "template") console.error("[generate] fell back to template:", g.reason);
-    return ok({ ir: g.ir, source: g.source, warnings: g.warnings, reason: g.reason });
+    return ok({ ir: g.ir, source: g.source, warnings: g.warnings, reason: g.reason, code: g.code });
   } catch (e) {
     if (e instanceof SyntaxError) return fail("BAD_REQUEST", 400);
     console.error("Generate route fatal error:", e);

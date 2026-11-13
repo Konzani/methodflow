@@ -108,7 +108,7 @@ export function qualityIssues(ir: IR, o: QualityOpts): string[] {
     const l = n.label.trim();
     const dec = n.shape === "decision";
     const term = n.shape === "terminator";
-    return w > LIMITS.labelWordsMax || (w < 2 && !dec && !term) || /[.;:,!]$/.test(l) || (!dec && /\?$/.test(l));
+    return w > LIMITS.labelWordsMax || l.length > LIMITS.labelCharsMax || (w < 2 && !dec && !term) || /[.;:,!]$/.test(l) || (!dec && /\?$/.test(l));
   });
   if (badLabel.length) {
     out.push(
