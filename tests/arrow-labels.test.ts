@@ -22,7 +22,8 @@ function withForkLabels() {
   return ir;
 }
 
-const arrowWidth = (svg: string) => Number((svg.match(/markerWidth="([\d.]+)"/) ?? [])[1]);
+const arrowWidth = (svg: string) => Number((svg.match(/data-arrow-px="([\d.]+)"/) ?? [])[1]);
+const arrowCount = (svg: string) => (svg.match(/data-arrow="1"/g) ?? []).length;
 const expectedPt = (svg: string, w: number, h: number, page: PageSettings) => {
   const boxes = contentBoxes(page);
   const scale = Math.max(...boxes.map((b) => Math.min(1, b.w / w, b.h / h)));
@@ -49,6 +50,12 @@ describe("arrowhead print sizing", () => {
   it("keeps a sensible fixed marker for inline previews without page boxes", () => {
     const { svg } = toSVG(floodIR);
     expect(arrowWidth(svg)).toBe(9);
+  });
+
+  it("draws every arrowhead as an explicit polygon (renderers that drop SVG markers still show them)", () => {
+    const { svg } = toSVG(floodIR, "mono", "sans", undefined, false, contentBoxes({ ...DEFAULT_PAGE, size: "a4" }));
+    expect(arrowCount(svg)).toBe(floodIR.edges.length);
+    expect(svg).not.toMatch(/<marker\b/);
   });
 });
 

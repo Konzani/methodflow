@@ -535,11 +535,11 @@ function Inner() {
   }, []);
 
   function loadExample() {
-    setMethod("quantitative");
+    setMethod("auto");
     setText(
       "A cross-sectional survey was conducted with 250 postgraduate students recruited through stratified random sampling. Data were collected using a validated 45-item online questionnaire. Ethical approval was obtained from the institutional review board prior to data collection. Instrument reliability was confirmed with a Cronbach's alpha of 0.89. Responses were analyzed using descriptive statistics, Pearson correlation, and hierarchical multiple regression in SPSS."
     );
-    setMsg("Example methodology loaded. Click 'Generate flowchart' to see the result.");
+    setMsg("Example methodology loaded with Auto-detect selected. Click 'Generate flowchart' to see the result.");
   }
 
   async function handleSignOut() {

@@ -88,7 +88,37 @@ export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", palet
             return `<rect x="${labelX - lw / 2}" y="${labelY - lh / 2}" width="${lw}" height="${lh}" rx="2" fill="#fff"/><text x="${labelX}" y="${labelY + 3.8}" font-size="11" fill="${ink}" text-anchor="middle">${esc(e.label)}</text>`;
           })()
         : "";
-      return `<path d="${pathD}" fill="none" stroke="${ink}" stroke-width="${edgeStroke}"${e.dashed ? ' stroke-dasharray="6 4"' : ""} marker-end="url(#a)"/>${lab}`;
+      // Arrowheads are explicit filled polygons rather than an SVG <marker>. jsPDF/svg2pdf
+      // (used for PDF/DOCX export) drops markers entirely, which is why exported PDFs had no
+      // visible arrowheads; a polygon is rendered by every SVG engine and its size is set in
+      // page space so it prints at ~3.5 pt regardless of the fit scale.
+      const arrow = (() => {
+        const pts: { x: number; y: number }[] = e.points?.length
+          ? e.points
+          : [
+              { x: source.x + (source.w || 200) / 2, y: source.y + (source.h || 60) },
+              { x: target.x + (target.w || 200) / 2, y: target.y },
+            ];
+        const p = pts[pts.length - 1];
+        let q = pts[pts.length - 2];
+        if (!q) return "";
+        let dx = p.x - q.x;
+        let dy = p.y - q.y;
+        const len = Math.hypot(dx, dy) || 1;
+        dx /= len;
+        dy /= len;
+        const L = arrowPx;
+        const halfW = arrowPx * 0.42;
+        const bx = p.x - dx * L;
+        const by = p.y - dy * L;
+        const px = -dy;
+        const py = dx;
+        const tip = `${p.x},${p.y}`;
+        const c1 = `${bx + px * halfW},${by + py * halfW}`;
+        const c2 = `${bx - px * halfW},${by - py * halfW}`;
+        return `<polygon data-arrow="1" points="${tip} ${c1} ${c2}" fill="${ink}" stroke="none"/>`;
+      })();
+      return `<path d="${pathD}" fill="none" stroke="${ink}" stroke-width="${edgeStroke}"${e.dashed ? ' stroke-dasharray="6 4"' : ""}/>${arrow}${lab}`;
     })
     .join("");
 
@@ -121,10 +151,7 @@ export function toSVG(src: IR, theme: Theme = "mono", font: Font = "sans", palet
     ? `${marks}<text x="${W - 24}" y="${H - 16}" font-family="Arial, sans-serif" font-size="12" fill="#6b7280" text-anchor="end" font-style="italic">Generated with MethodFlow (Free Tier)</text>`
     : "";
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${ff}" role="img" aria-label="${esc(laidOut.meta.title)}"><title>${esc(laidOut.meta.title)}</title><desc>${esc(laidOut.meta.caption ?? "")}</desc>
-    <defs>
-      <marker id="a" markerUnits="userSpaceOnUse" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="${arrowPx}" markerHeight="${arrowPx}" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${ink}"/></marker>
-    </defs>
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-arrow-px="${arrowPx.toFixed(3)}" font-family="${ff}" role="img" aria-label="${esc(laidOut.meta.title)}"><title>${esc(laidOut.meta.title)}</title><desc>${esc(laidOut.meta.caption ?? "")}</desc>
     <rect width="100%" height="100%" fill="${pal.canvas}"/>
     ${groups}${edges}${nodes}
     ${watermarkSvg}
