@@ -15,11 +15,11 @@ export function classifyFailure(why: string[]): GenErrorCode {
 export function friendlyGenerationError(code: GenErrorCode | undefined): string {
   switch (code) {
     case "timeout":
-      return "The AI service was too slow to finish this diagram in time. Your previous diagram is unchanged.";
+      return "MethodFlow AI was too slow to finish this diagram in time. Your previous diagram is unchanged.";
     case "invalid":
-      return "The AI produced a diagram that didn't pass our automatic checks — usually because one step description was too long. Your previous diagram is unchanged.";
+      return "MethodFlow AI produced a diagram that didn't pass our automatic checks — usually because one step description was too long. Your previous diagram is unchanged.";
     default:
-      return "The AI service couldn't complete this request right now. Your previous diagram is unchanged.";
+      return "MethodFlow AI couldn't complete this request right now. Your previous diagram is unchanged.";
   }
 }
 

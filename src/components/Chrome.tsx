@@ -7,6 +7,7 @@ export function Header() {
       <div className="wrap">
         <Link href="/" className="logo">
           {SITE.name}
+          <span style={{ fontWeight: 400, opacity: 0.6, fontSize: "0.72em", letterSpacing: "0.02em" }}> AI</span>
         </Link>
         <nav className="nav" aria-label="Main">
           <Link href="/templates">Templates</Link>

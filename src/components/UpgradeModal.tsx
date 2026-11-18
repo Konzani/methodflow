@@ -18,17 +18,17 @@ export function UpgradeModal() {
   const content = {
     limit: {
       title: "You've reached your daily limit.",
-      desc: "Don't lose your momentum. Upgrade to Pro for unlimited AI generations and finish your methodology without interruptions.",
-      cta: "Unlock Unlimited Generations"
+      desc: "Upgrade to MethodFlow AI Pro for up to 200 generations per day, document upload and watermark-free exports — and finish your methodology without interruptions.",
+      cta: "Upgrade to MethodFlow AI Pro"
     },
     watermark: {
       title: "Your draft has downloaded.",
-      desc: "Upgrade to Pro to export clean, watermark-free figures ready for your thesis, supervisor review, and publication.",
+      desc: "Upgrade to MethodFlow AI Pro to export clean, watermark-free figures ready for your thesis, supervisor review, and publication.",
       cta: "Remove Watermarks"
     },
     feature: {
       title: "Save hours of manual formatting.",
-      desc: "Word, LaTeX, PDF Uploads, and Advanced AI models are available on MethodFlow Pro. Upgrade to automate your thesis formatting.",
+      desc: "Word, LaTeX, PDF/DOCX upload and the deeper MethodFlow AI Pro engine are included in Pro. Upgrade to automate your thesis formatting.",
       cta: "View Pro Features"
     }
   };
@@ -41,12 +41,12 @@ export function UpgradeModal() {
         className="modal" 
         role="dialog" 
         aria-modal="true" 
-        aria-label="Upgrade to Pro" 
+        aria-label="Upgrade to MethodFlow AI Pro" 
         onClick={e => e.stopPropagation()}
         style={{ padding: 40, maxWidth: 500, textAlign: "center", boxShadow: "0 24px 64px rgba(0,0,0,0.15)" }}
       >
         <div style={{ display: "inline-block", padding: "6px 12px", background: "var(--wash)", color: "var(--accent)", borderRadius: 20, fontSize: 12, fontWeight: 600, letterSpacing: "0.05em", marginBottom: 24 }}>
-          METHODFLOW PRO
+          METHODFLOW AI PRO
         </div>
         
         <h2 style={{ fontSize: 28, marginBottom: 16 }}>{activeContent.title}</h2>
@@ -55,10 +55,10 @@ export function UpgradeModal() {
         </p>
 
         <div style={{ background: "var(--wash)", padding: 24, borderRadius: "var(--r)", marginBottom: 32, textAlign: "left", fontSize: 14, color: "var(--graphite)", display: "grid", gap: 12 }}>
-          <div style={{ display: "flex", gap: 8 }}><span style={{ color: "var(--accent)", fontWeight: "bold" }}>✓</span> Unlimited AI generations</div>
-          <div style={{ display: "flex", gap: 8 }}><span style={{ color: "var(--accent)", fontWeight: "bold" }}>✓</span> Advanced Reasoning Engine</div>
-          <div style={{ display: "flex", gap: 8 }}><span style={{ color: "var(--accent)", fontWeight: "bold" }}>✓</span> Smart PDF & DOCX Upload</div>
-          <div style={{ display: "flex", gap: 8 }}><span style={{ color: "var(--accent)", fontWeight: "bold" }}>✓</span> Word & LaTeX (TikZ) exports</div>
+          <div style={{ display: "flex", gap: 8 }}><span style={{ color: "var(--accent)", fontWeight: "bold" }}>✓</span> Up to 200 MethodFlow AI generations / day</div>
+          <div style={{ display: "flex", gap: 8 }}><span style={{ color: "var(--accent)", fontWeight: "bold" }}>✓</span> MethodFlow AI Pro engine</div>
+          <div style={{ display: "flex", gap: 8 }}><span style={{ color: "var(--accent)", fontWeight: "bold" }}>✓</span> PDF &amp; DOCX document upload</div>
+          <div style={{ display: "flex", gap: 8 }}><span style={{ color: "var(--accent)", fontWeight: "bold" }}>✓</span> Watermark-free Word &amp; LaTeX (TikZ)</div>
         </div>
 
         <div style={{ display: "grid", gap: 12 }}>

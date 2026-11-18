@@ -3,8 +3,9 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Guide: How to generate methodology flowcharts",
-  description: "Learn how to write the perfect prompt to generate thesis-ready methodology flowcharts. Tips for PDF upload, AI refinement, and LaTeX exports.",
+  title: "MethodFlow AI guide: methodology flowcharts that supervisors accept",
+  description:
+    "Learn how to write a methodology prompt that MethodFlow AI can turn into a thesis-ready flowchart: required details, PDF upload, refinements and LaTeX or Word exports.",
   alternates: { canonical: "/guide" },
 };
 
@@ -14,9 +15,9 @@ export default function GuidePage() {
       <Header />
       <main className="wrap page" style={{ maxWidth: 800 }}>
         
-        <h1 style={{ fontSize: 44, marginBottom: 16 }}>The MethodFlow Guide</h1>
+        <h1 style={{ fontSize: 44, marginBottom: 16 }}>The MethodFlow AI Guide</h1>
         <p style={{ fontSize: 18, color: "var(--graphite)", marginBottom: 48 }}>
-          Master the tool in 5 minutes. Learn how to prompt the AI, use PDF extraction, and export flawless diagrams for your thesis.
+          Master MethodFlow AI in 5 minutes. Learn how to prompt it, use PDF extraction, and export flawless diagrams for your thesis.
         </p>
 
         {/* Section 1 */}
@@ -24,7 +25,7 @@ export default function GuidePage() {
           <h2 style={{ fontSize: 28, marginBottom: 16 }}>1. The 60-Second Quickstart</h2>
           <ol style={{ display: "grid", gap: 16, fontSize: 16, color: "var(--graphite)", paddingLeft: 20 }}>
             <li><strong>Paste your text:</strong> Paste a paragraph describing your research methodology into the left panel.</li>
-            <li><strong>Click Generate:</strong> The AI will analyze your text and draw a flowchart in seconds.</li>
+            <li><strong>Click Generate:</strong> MethodFlow AI analyses your text and draws the flowchart in seconds.</li>
             <li><strong>Edit & Export:</strong> Rename nodes, change colors, and export to PDF, Word, or LaTeX.</li>
           </ol>
         </section>
@@ -33,7 +34,8 @@ export default function GuidePage() {
         <section style={{ marginBottom: 64 }}>
           <h2 style={{ fontSize: 28, marginBottom: 16 }}>2. The Anatomy of a Perfect Prompt</h2>
           <p style={{ fontSize: 16, color: "var(--graphite)", marginBottom: 24 }}>
-            The AI is only as good as the information you give it. If you type "Make a flowchart", you will get a generic result. You must include the <strong>technical details</strong> of your study.
+            MethodFlow AI is only as good as the information you give it. If you type "Make a flowchart", you will get a generic
+            result. Include the <strong>technical details</strong> of your study.
           </p>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
@@ -64,15 +66,18 @@ export default function GuidePage() {
         <section style={{ marginBottom: 64 }}>
           <h2 style={{ fontSize: 28, marginBottom: 16 }}>3. The PDF Upload (Pro)</h2>
           <p style={{ fontSize: 16, color: "var(--graphite)" }}>
-            Instead of typing, Pro users can drag and drop a <strong>PDF or DOCX</strong> research proposal into the editor. The AI will automatically scan the document, extract the methodology chapter, and generate the flowchart. This is perfect for long, complex proposals.
+            Instead of typing, Pro users can drag and drop a <strong>PDF or DOCX</strong> research proposal into the editor.
+            MethodFlow AI scans the document, extracts the methodology chapter and drafts the flowchart. This is designed for
+            long, complex proposals where the methods are buried.
           </p>
         </section>
 
         {/* Section 4 */}
         <section style={{ marginBottom: 64 }}>
-          <h2 style={{ fontSize: 28, marginBottom: 16 }}>4. Refining with AI</h2>
+          <h2 style={{ fontSize: 28, marginBottom: 16 }}>4. Refining with MethodFlow AI</h2>
           <p style={{ fontSize: 16, color: "var(--graphite)" }}>
-            The first draft doesn't have to be perfect. Use the <strong>Refine with AI</strong> box to make surgical changes. You don't need to regenerate the whole diagram.
+            The first draft doesn't have to be perfect. Use the <strong>Refine with MethodFlow AI</strong> box to make surgical changes.
+            You don't need to regenerate the whole diagram.
           </p>
           <ul style={{ display: "grid", gap: 12, fontSize: 16, color: "var(--graphite)", paddingLeft: 20, marginTop: 16 }}>
             <li>"Add a decision gate for missing data after the data collection step."</li>
@@ -92,8 +97,14 @@ export default function GuidePage() {
         </section>
 
         <div style={{ textAlign: "center", marginTop: 64 }}>
+          <p style={{ fontSize: 16, color: "var(--graphite)", marginBottom: 16 }}>
+            MethodFlow AI Pro adds the deeper engine, document upload and watermark-free Word/LaTeX exports.
+          </p>
           <Link href="/app" className="btn pri" style={{ padding: "12px 24px", fontSize: 18 }}>
             Open the Editor
+          </Link>{" "}
+          <Link href="/pricing" className="btn ghost" style={{ padding: "12px 24px", fontSize: 18 }}>
+            Compare plans
           </Link>
         </div>
 

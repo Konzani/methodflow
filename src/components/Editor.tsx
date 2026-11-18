@@ -782,7 +782,7 @@ function Inner() {
       } else {
         const p = IRSchema.safeParse(j.ir);
         if (j.source === "template") {
-          setGenError({ title: "The refinement could not be applied", detail: "The AI could not apply that edit, so your diagram is unchanged. Try rephrasing the instruction.", retryable: false });
+          setGenError({ title: "The refinement could not be applied", detail: "MethodFlow AI could not apply that edit, so your diagram is unchanged. Try rephrasing the instruction.", retryable: false });
           setMsg("The edit could not be applied, so your diagram is unchanged. Try rephrasing the instruction.");
         } else if (!p.success) {
           setGenError({ title: "The refined diagram was invalid", detail: "It was discarded, so your diagram is unchanged.", retryable: false });
@@ -1175,7 +1175,7 @@ function Inner() {
         </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 16 }}>
-          <h2 style={{ margin: 0 }}>Refine with AI</h2>
+          <h2 style={{ margin: 0 }}>Refine with MethodFlow AI</h2>
           <button
             className="note"
             style={{ background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}
@@ -1597,7 +1597,7 @@ function Inner() {
           <div className="modal" style={{ maxWidth: 650 }} onClick={(e) => e.stopPropagation()}>
             <h2 style={{ fontSize: 24, marginBottom: 8 }}>How to write a perfect prompt</h2>
             <p style={{ color: "var(--graphite)", fontSize: 15, marginBottom: 24 }}>
-              The AI is only as good as the text you give it. To get a thesis-ready diagram, include these 4 elements in your text:
+              MethodFlow AI is only as good as the text you give it. To get a thesis-ready diagram, include these 4 elements in your text:
             </p>
 
             <div style={{ display: "grid", gap: 20 }}>
@@ -1644,9 +1644,9 @@ function Inner() {
               </div>
 
               <div>
-                <h3 style={{ fontSize: 16, fontFamily: "var(--sans)", marginBottom: 4 }}>5. Refining with AI (Surgical Edits)</h3>
+                <h3 style={{ fontSize: 16, fontFamily: "var(--sans)", marginBottom: 4 }}>5. Refining with MethodFlow AI (Surgical Edits)</h3>
                 <p style={{ margin: 0, fontSize: 14, color: "var(--graphite)" }}>
-                  The <strong>Refine with AI</strong> box is for making specific, surgical changes to a diagram you've already
+                  The <strong>Refine with MethodFlow AI</strong> box is for making specific, surgical changes to a diagram you've already
                   generated. Don't ask it to "make it better"—be precise about the node you want to change.
                   <br />
                   <em style={{ color: "var(--accent)" }}>
@@ -1664,7 +1664,7 @@ function Inner() {
               <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Pro Tip: Use the PDF Upload</p>
               <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--graphite)" }}>
                 If you already have a written methodology chapter, just click <strong>"Or upload a PDF / DOCX"</strong> below. The
-                AI will automatically extract the methodology and build the flowchart for you.
+                MethodFlow AI will automatically extract the methodology and build the flowchart for you.
               </p>
             </div>
 

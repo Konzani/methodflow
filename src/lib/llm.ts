@@ -289,8 +289,8 @@ export async function generate(a: {
     warnings: [
       ...w,
       r.tried
-        ? "The generator could not produce a valid diagram from your text."
-        : "The AI service is unavailable or out of time.",
+        ? "MethodFlow AI could not produce a valid diagram from your text."
+        : "MethodFlow AI is unavailable or out of time.",
     ],
     cost: r.cost,
     reason: r.why.join(" | ") || undefined,
@@ -394,7 +394,7 @@ export async function refine(a: { ir: IR; instruction: string; isPro?: boolean; 
   return {
     ir: a.ir,
     source: "template",
-    warnings: [r.tried ? "The AI could not complete the refinement. Your diagram is unchanged." : "AI is unavailable."],
+    warnings: [r.tried ? "MethodFlow AI could not complete the refinement. Your diagram is unchanged." : "MethodFlow AI is unavailable."],
     cost: r.cost,
     reason: r.why.join(" | ") || undefined,
   };

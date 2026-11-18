@@ -36,7 +36,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* Success Banner */}
         {isUpgraded && (
           <div style={{ background: "#E4F1E9", border: "1px solid #2E6B45", color: "#2E6B45", padding: 16, borderRadius: 8, marginBottom: 32, textAlign: "center", fontWeight: 600 }}>
-            🎉 Payment successful! Welcome to MethodFlow Pro. Your account has been upgraded.
+            🎉 Payment successful! Welcome to MethodFlow AI Pro. Your account has been upgraded.
           </div>
         )}
 
@@ -54,7 +54,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <div style={{ display: "flex", gap: 12 }}>
             {profile?.plan !== "pro" && (
               <Link href="/pricing" className="btn ghost" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                Upgrade to Pro
+                Upgrade to MethodFlow AI Pro
               </Link>
             )}
             <Link href="/app?new=1" className="btn">+ New Flowchart</Link>
@@ -68,9 +68,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <div className="plate" style={{ padding: "64px 24px", textAlign: "center", background: "var(--wash)", borderStyle: "dashed" }}>
             <h3 style={{ fontSize: 20, marginBottom: 12 }}>No diagrams saved to the cloud yet</h3>
             <p style={{ marginBottom: 24, color: "var(--graphite)" }}>
-              Open the editor to generate a flowchart, then click "Save to Cloud" to see it here.
+              {profile?.plan === "pro"
+                ? 'Open the editor to generate a flowchart, then click "Save to Cloud" to see it here.'
+                : "Cloud diagrams are part of MethodFlow AI Pro. Upgrade to keep your figures on any device."}
             </p>
-            <Link href="/app" className="btn">Open the Editor</Link>
+            {profile?.plan === "pro" ? (
+              <Link href="/app" className="btn">Open the Editor</Link>
+            ) : (
+              <Link href="/pricing" className="btn">Upgrade to MethodFlow AI Pro</Link>
+            )}
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 20 }}>
